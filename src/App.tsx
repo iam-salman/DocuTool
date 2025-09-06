@@ -4,8 +4,8 @@ import type { FC, ChangeEvent, MouseEvent, TouchEvent, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Upload, Crop, Download, RotateCw, Edit, FileImage, FileText, Trash2, CreditCard, Scan,
-    Info, HelpCircle, Sun, Moon, Bell, 
-    Share2, UserCircle, Menu, X, ChevronDown, Briefcase, CheckCircle, AlertTriangle, Copy, LayoutGrid, Printer
+    Info, HelpCircle, Sun, Moon, 
+    Share2, Menu, X, Briefcase, CheckCircle, AlertTriangle, Copy, LayoutGrid, Printer
 } from 'lucide-react';
 
 // --- TYPE DEFINITIONS ---
