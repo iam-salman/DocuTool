@@ -1,16 +1,10 @@
-Of course\! Here is a comprehensive `README.md` file for your DocuTool application, generated from the provided code.
-
------
-
 # DocuTool 📄✨
 
 DocuTool is a powerful, browser-based utility designed to streamline the process of scanning documents and creating printable ID card sheets. Built with Next.js and TypeScript, it offers a clean, responsive, and feature-rich interface for all your document handling needs, right in your web browser.
 
-*(Suggestion: Add a screenshot or GIF of the application in action here.)*
-
 -----
 
-## \#\# Key Features
+## Key Features
 
 DocuTool is packed with features to make document processing simple and efficient.
 
@@ -51,7 +45,7 @@ DocuTool is packed with features to make document processing simple and efficien
 
 -----
 
-## \#\# Tech Stack
+## Tech Stack
 
 This project is built using a modern, robust technology stack:
 
@@ -65,7 +59,7 @@ This project is built using a modern, robust technology stack:
 
 -----
 
-## \#\# Getting Started
+## Getting Started
 
 To get a local copy up and running, follow these simple steps.
 
@@ -95,7 +89,7 @@ You need to have [Node.js](https://nodejs.org/) (version 18.x or later) and npm 
 
 -----
 
-## \#\# How to Use
+## How to Use
 
 1.  **Scan an Image**: Navigate to the **Image Scanner** page. Upload a file or paste an image from your clipboard.
 2.  **Crop the Document**: You'll be taken to the cropping screen. Drag the four corner handles to perfectly align with the document's edges and click **Apply Crop**.
@@ -105,7 +99,7 @@ You need to have [Node.js](https://nodejs.org/) (version 18.x or later) and npm 
 
 -----
 
-## \#\# Code Overview
+## Code Overview
 
 The entire application is encapsulated within a single, well-structured file (`App.tsx`), demonstrating a cohesive component-based architecture.
 
@@ -119,6 +113,6 @@ The entire application is encapsulated within a single, well-structured file (`A
 
 -----
 
-## \#\# License
+## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
