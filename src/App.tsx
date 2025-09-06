@@ -1,9 +1,10 @@
+'use client'
 import React, { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import type { FC, ChangeEvent, MouseEvent, TouchEvent, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Upload, Crop, Download, RotateCw, Edit, FileImage, FileText, Trash2, CreditCard, Scan,
-    Info, HelpCircle, Sun, Moon, Search, Bell, 
+    Info, HelpCircle, Sun, Moon, Bell, 
     Share2, UserCircle, Menu, X, ChevronDown, Briefcase, CheckCircle, AlertTriangle, Copy, LayoutGrid, Printer
 } from 'lucide-react';
 
@@ -38,7 +39,7 @@ const SIDEBAR_ITEMS = [
 ];
 
 const APP_NAME = "DocuTool";
-const DEFAULT_THEME: 'light' | 'dark' = 'light';
+const DEFAULT_THEME: 'light' | 'dark' = 'dark'; // Changed to dark
 const DEFAULT_PAGE = 'scanner';
 const FONT_URL = 'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap';
 
@@ -52,10 +53,9 @@ interface AppContextType {
   setIsMobileMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showShareModal: boolean;
   setShowShareModal: React.Dispatch<React.SetStateAction<boolean>>;
-  showLogoutModal: boolean;
-  setShowLogoutModal: React.Dispatch<React.SetStateAction<boolean>>;
   croppedImages: CroppedImage[];
   setCroppedImages: React.Dispatch<React.SetStateAction<CroppedImage[]>>;
+  isCvLoaded: boolean;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -130,7 +130,7 @@ const gaussianElimination = (a: number[][], b: number[]): number[] => {
 
 // --- TOOL PAGES & LOGIC COMPONENT ---
 const ToolPages: FC = () => {
-  const { currentPage, setCurrentPage, showToast, croppedImages, setCroppedImages } = useAppContext();
+  const { currentPage, setCurrentPage, showToast, croppedImages, setCroppedImages, isCvLoaded } = useAppContext();
   
   const [appState, setAppState] = useState<AppState | 'idle'>('idle');
   const [editingImage, setEditingImage] = useState<CroppedImage | null>(null);
@@ -160,12 +160,68 @@ const ToolPages: FC = () => {
     { id: 'none', name: 'None', filter: 'none' },
   ];
   
+  const detectCardCorners = useCallback((img: HTMLImageElement): Point[] | null => {
+    if (!isCvLoaded) return null;
+    const cv = (window as any).cv;
+    try {
+        let src = cv.imread(img);
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        let blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+        let edged = new cv.Mat();
+        cv.Canny(blurred, edged, 75, 200);
+
+        let contours = new cv.MatVector();
+        let hierarchy = new cv.Mat();
+        cv.findContours(edged, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+        let maxArea = 0;
+        let bestContour = null;
+        for (let i = 0; i < contours.size(); ++i) {
+            let cnt = contours.get(i);
+            let area = cv.contourArea(cnt, false);
+            let peri = cv.arcLength(cnt, true);
+            let approx = new cv.Mat();
+            cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+            if (approx.rows === 4 && area > maxArea && area > (img.width * img.height / 10)) {
+                maxArea = area;
+                bestContour = approx;
+            }
+            cnt.delete();
+        }
+
+        if (bestContour) {
+            const points: Point[] = [
+                { x: bestContour.data32S[0], y: bestContour.data32S[1] },
+                { x: bestContour.data32S[2], y: bestContour.data32S[3] },
+                { x: bestContour.data32S[4], y: bestContour.data32S[5] },
+                { x: bestContour.data32S[6], y: bestContour.data32S[7] },
+            ];
+            bestContour.delete();
+            // Sort points: top-left, top-right, bottom-right, bottom-left
+            points.sort((a, b) => a.y - b.y);
+            const top = points.slice(0, 2).sort((a, b) => a.x - b.x);
+            const bottom = points.slice(2, 4).sort((a, b) => a.x - b.x);
+            return [top[0], top[1], bottom[1], bottom[0]];
+        }
+        
+        src.delete(); gray.delete(); blurred.delete(); edged.delete(); contours.delete(); hierarchy.delete();
+    } catch (e) {
+        console.error("OpenCV error:", e);
+        showToast("Auto-detection failed.", "error");
+    }
+    return null;
+  }, [isCvLoaded, showToast]);
+
   const processAndSetImage = useCallback((imageDataUrl: string, existingImage: Omit<CroppedImage, 'cropped'> | null = null) => {
     const img = imageRef.current;
     img.onload = () => {
         const imageToEdit = existingImage || { id: Date.now(), source: imageDataUrl, corners: [], rotation: 0 };
+        const detectedCorners = detectCardCorners(img);
+
         setEditingImage(imageToEdit as CroppedImage);
-        setCorners(imageToEdit.corners?.length === 4 ? imageToEdit.corners : [
+        setCorners(detectedCorners || imageToEdit.corners?.length === 4 ? detectedCorners || imageToEdit.corners : [
             { x: img.width * 0.1, y: img.height * 0.1 }, { x: img.width * 0.9, y: img.height * 0.1 },
             { x: img.width * 0.9, y: img.height * 0.9 }, { x: img.width * 0.1, y: img.height * 0.9 },
         ]);
@@ -173,7 +229,7 @@ const ToolPages: FC = () => {
         setAppState('cropping');
     };
     img.src = imageDataUrl;
-  }, []);
+  }, [detectCardCorners]);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -426,7 +482,7 @@ const ToolPages: FC = () => {
   const handleDownloadIdCard = (format: 'png' | 'pdf') => {
       const canvas = idCardCanvasRef.current;
       if (!canvas) return;
-      const finalFileName = `${fileName.trim() || 'id-card-document'}-${Date.now()}`;
+      const finalFileName = `${fileName.trim() || 'id-card-document'}`; // Removed timestamp
       if (format === 'png') {
           const link = document.createElement('a');
           link.href = canvas.toDataURL('image/png');
@@ -442,31 +498,82 @@ const ToolPages: FC = () => {
   };
 
   const handlePrint = () => {
-    const canvas = idCardCanvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-        printWindow.document.write(`
-            <html>
-                <head><title>Print Document</title>
-                    <style>
-                        @media print {
-                            @page { size: A4 portrait; margin: 0; }
-                            body { margin: 0; }
-                            img { width: 100%; height: 100%; object-fit: contain; }
-                        }
-                    </style>
+      const canvas = idCardCanvasRef.current;
+      if (!canvas) return;
+      const dataUrl = canvas.toDataURL("image/png");
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+          printWindow.document.write(`
+              <html>
+                <head>
+                  <title>Print Document</title>
+                  <style>
+                    @page { size: A4 portrait; margin: 0; }
+                    body { margin: 0; }
+                    img { width: 100vw; height: 100vh; object-fit: contain; }
+                  </style>
                 </head>
-                <body style="margin: 0;">
-                    <img src="${dataUrl}" onload="window.print(); window.close();" />
+                <body>
+                  <img src="${dataUrl}" />
                 </body>
-            </html>
-        `);
-        printWindow.document.close();
-    }
+              </html>
+          `);
+          const img = printWindow.document.querySelector('img');
+          if(img) {
+            img.onload = () => {
+              printWindow.print();
+              printWindow.close();
+            };
+          }
+          printWindow.document.close();
+      } else {
+        showToast("Pop-up blocked. Please allow pop-ups for this site.", "error");
+      }
   };
 
+  const dataURLtoFile = (dataurl: string, filename: string) => {
+    const arr = dataurl.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    if (!mimeMatch) return null;
+    const mime = mimeMatch[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
+
+  const handleShare = async () => {
+    const canvas = idCardCanvasRef.current;
+    if (!canvas) return;
+
+    if (!navigator.share) {
+        showToast("Web Share is not supported on your browser.", "error");
+        return;
+    }
+    
+    const finalFileName = `${fileName.trim() || 'id-card-document'}.png`;
+    const dataUrl = canvas.toDataURL('image/png');
+    const file = dataURLtoFile(dataUrl, finalFileName);
+
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+            await navigator.share({
+                files: [file],
+                title: 'ID Card Document',
+                text: `Here is the document: ${finalFileName}`,
+            });
+            showToast("Shared successfully!", "success");
+        } catch (error) {
+            console.error("Share failed:", error);
+            showToast("Could not share the file.", "error");
+        }
+    } else {
+        showToast("Sharing files is not supported on your device.", "error");
+    }
+  };
 
   // --- RENDER METHODS ---
 
@@ -478,44 +585,45 @@ const ToolPages: FC = () => {
     return (
         <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 z-[1001] flex flex-col md:flex-row">
              <div className="w-full md:w-80 flex-shrink-0 bg-[var(--theme-bg-primary)] p-4 space-y-6 overflow-y-auto">
-                <h2 className="text-xl font-bold text-[var(--theme-text-primary)]">Controls</h2>
-                
-                <div>
-                    <label className="text-sm font-medium text-[var(--theme-text-secondary)]">File Name</label>
-                    <input 
-                        type="text" 
-                        value={fileName}
-                        onChange={(e) => setFileName(e.target.value)}
-                        placeholder="Enter file name"
-                        className="mt-1 block w-full px-3 py-2 text-sm rounded-md border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent-primary)]"
-                    />
-                </div>
-                
-                <div>
-                    <label className="text-sm font-medium text-[var(--theme-text-secondary)]">Card Width</label>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                        {widthOptions.map(w => (
-                            <button key={w} onClick={() => setCardWidthCm(w)}
-                                className={`px-3 py-2 text-sm rounded-md border ${cardWidthCm === w ? 'bg-[var(--theme-accent-primary)] text-white border-[var(--theme-accent-primary)]' : 'bg-transparent text-[var(--theme-text-primary)] border-[var(--theme-border-secondary)] hover:bg-[var(--theme-bg-tertiary)]'}`}>
-                                {w} cm
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                 <h2 className="text-xl font-bold text-[var(--theme-text-primary)]">Controls</h2>
+                 
+                 <div>
+                     <label className="text-sm font-medium text-[var(--theme-text-secondary)]">File Name</label>
+                     <input 
+                         type="text" 
+                         value={fileName}
+                         onChange={(e) => setFileName(e.target.value)}
+                         placeholder="Enter file name"
+                         className="mt-1 block w-full px-3 py-2 text-sm rounded-md border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent-primary)]"
+                     />
+                 </div>
+                 
+                 <div>
+                     <label className="text-sm font-medium text-[var(--theme-text-secondary)]">Card Width</label>
+                     <div className="mt-2 grid grid-cols-2 gap-2">
+                         {widthOptions.map(w => (
+                             <button key={w} onClick={() => setCardWidthCm(w)}
+                                 className={`px-3 py-2 text-sm rounded-md border ${cardWidthCm === w ? 'bg-[var(--theme-accent-primary)] text-white border-[var(--theme-accent-primary)]' : 'bg-transparent text-[var(--theme-text-primary)] border-[var(--theme-border-secondary)] hover:bg-[var(--theme-bg-tertiary)]'}`}>
+                                 {w} cm
+                             </button>
+                         ))}
+                     </div>
+                 </div>
 
-                <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-[var(--theme-text-secondary)]">Actions</h3>
-                    <button onClick={() => handleDownloadIdCard('png')} className="w-full inline-flex items-center justify-center px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700"> <FileImage className="w-5 h-5 mr-2"/> Download PNG </button>
-                    <button onClick={() => handleDownloadIdCard('pdf')} className="w-full inline-flex items-center justify-center px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700"> <FileText className="w-5 h-5 mr-2"/> Download PDF </button>
-                    <button onClick={handlePrint} className="w-full inline-flex items-center justify-center px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700"> <Printer className="w-5 h-5 mr-2"/> Print </button>
-                </div>
+                 <div className="space-y-2">
+                     <h3 className="text-sm font-medium text-[var(--theme-text-secondary)]">Actions</h3>
+                     <button onClick={() => handleDownloadIdCard('png')} className="w-full inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700"> <FileImage className="w-5 h-5 mr-2"/> Download PNG </button>
+                     <button onClick={() => handleDownloadIdCard('pdf')} className="w-full inline-flex items-center justify-center px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700"> <FileText className="w-5 h-5 mr-2"/> Download PDF </button>
+                     <button onClick={handlePrint} className="w-full inline-flex items-center justify-center px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700"> <Printer className="w-5 h-5 mr-2"/> Print </button>
+                     <button onClick={handleShare} className="w-full inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700"> <Share2 className="w-5 h-5 mr-2"/> Share </button>
+                 </div>
 
-                 <button onClick={() => setIdCardPreview(false)} className="w-full mt-4 font-semibold px-4 py-2 rounded-lg text-indigo-600 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700 border border-current">Back</button>
+                  <button onClick={() => setIdCardPreview(false)} className="w-full mt-4 font-semibold px-4 py-2 rounded-lg text-blue-600 hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-700 border border-current">Back</button>
 
              </div>
              <main className="flex-grow flex justify-center items-center overflow-hidden p-4 bg-gray-200 dark:bg-gray-900">
-                <canvas ref={idCardCanvasRef} className="max-w-full max-h-full h-auto w-auto object-contain shadow-lg bg-white"/>
-            </main>
+                 <canvas ref={idCardCanvasRef} className="max-w-full max-h-full h-auto w-auto object-contain shadow-lg bg-white"/>
+             </main>
         </div>
     )
   }
@@ -586,7 +694,7 @@ const ToolPages: FC = () => {
             ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {croppedImages.map(img => (
-                        <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group ${selectable && selectedIds?.includes(img.id) ? 'border-indigo-500' : 'border-transparent'}`} 
+                        <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group ${selectable && selectedIds?.includes(img.id) ? 'border-blue-500' : 'border-transparent'}`} 
                             onClick={() => selectable && onSelect?.(img.id)}>
                             <img src={img.cropped} className="aspect-video object-contain bg-gray-100 dark:bg-gray-800 w-full" alt="cropped item"/>
                             <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -594,7 +702,7 @@ const ToolPages: FC = () => {
                                 <button onClick={(e) => { e.stopPropagation(); setCroppedImages(imgs => imgs.filter(i => i.id !== img.id)); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Trash2 size={14}/></button>
                             </div>
                             {selectable && <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${selectedIds?.includes(img.id) ? 'bg-indigo-600' : 'bg-white/50 border'}`}>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${selectedIds?.includes(img.id) ? 'bg-blue-600' : 'bg-white/50 border'}`}>
                                     {selectedIds?.includes(img.id) && <CheckCircle size={16} className="text-white"/>}
                                 </div>
                             </div>}
@@ -611,11 +719,11 @@ const ToolPages: FC = () => {
           <PageWrapper title="Image Scanner">
               <Card>
                   <div className="text-center">
-                      <div className="mx-auto mb-4 p-4 bg-indigo-100 dark:bg-gray-800 rounded-full inline-block"> <Scan className="w-10 h-10 text-indigo-600 dark:text-indigo-400" /> </div>
+                      <div className="mx-auto mb-4 p-4 bg-blue-100 dark:bg-gray-800 rounded-full inline-block"> <Scan className="w-10 h-10 text-blue-600 dark:text-blue-400" /> </div>
                       <h2 className="text-xl font-bold text-gray-800 dark:text-white">Scan a new document</h2>
-                      <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto mt-2 mb-6">Upload a file or paste an image from your clipboard to begin cropping.</p>
+                      <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto mt-2 mb-6">Upload an image or paste from your clipboard. The app will try to auto-detect the document.</p>
                       <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e)} accept="image/*" className="hidden"/>
-                      <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-md hover:bg-indigo-700 transition-all">
+                      <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-full shadow-md hover:bg-blue-700 transition-all">
                           <Upload className="w-5 h-5 mr-2" /> Upload Image
                       </button>
                   </div>
@@ -643,10 +751,10 @@ const ToolPages: FC = () => {
         <PageWrapper title="ID Card Document Maker">
             <Card>
                 <div className="text-center">
-                    <div className="mx-auto mb-4 p-4 bg-indigo-100 dark:bg-gray-800 rounded-full inline-block"> <CreditCard className="w-10 h-10 text-indigo-600 dark:text-indigo-400" /> </div>
+                    <div className="mx-auto mb-4 p-4 bg-blue-100 dark:bg-gray-800 rounded-full inline-block"> <CreditCard className="w-10 h-10 text-blue-600 dark:text-blue-400" /> </div>
                     <h2 className="text-xl font-bold text-gray-800 dark:text-white">Create Your Document</h2>
                     <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto mt-2 mb-6">Click the button below to select images from your gallery or upload new ones.</p>
-                    <button onClick={() => setIsIdModalOpen(true)} className="inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-md hover:bg-indigo-700 transition-all">
+                    <button onClick={() => setIsIdModalOpen(true)} className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-full shadow-md hover:bg-blue-700 transition-all">
                         <CheckCircle className="w-5 h-5 mr-2" /> Select Images
                     </button>
                 </div>
@@ -660,7 +768,7 @@ const ToolPages: FC = () => {
                         <Upload size={16} className="mr-2"/> Upload New
                     </button>
                     <input type="file" ref={fileInputRef} onChange={(e) => handleFileChange(e)} accept="image/*" className="hidden"/>
-                    <button onClick={createIdDocument} disabled={selectedIds.length === 0} className="inline-flex items-center px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    <button onClick={createIdDocument} disabled={selectedIds.length === 0} className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
                         <CreditCard size={16} className="mr-2"/> Create Document ({selectedIds.length}/2)
                     </button>
                 </div>
@@ -679,8 +787,8 @@ const App: FC = () => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [showShareModal, setShowShareModal] = useState(false);
-    const [showLogoutModal, setShowLogoutModal] = useState(false);
     const [croppedImages, setCroppedImages] = useState<CroppedImage[]>([]);
+    const [isCvLoaded, setIsCvLoaded] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
@@ -689,6 +797,28 @@ const App: FC = () => {
         const hashPage = window.location.hash.substring(1);
         if (hashPage && SIDEBAR_ITEMS.some(i => i.path === hashPage)) _setCurrentPage(hashPage);
         else window.location.hash = DEFAULT_PAGE;
+        
+        // Load OpenCV
+        const scriptId = 'opencv-script';
+        if (!document.getElementById(scriptId)) {
+            const script = document.createElement('script');
+            script.id = scriptId;
+            script.src = 'https://docs.opencv.org/4.9.0/opencv.js';
+            script.async = true;
+            script.onload = () => {
+                const cv = (window as any).cv;
+                if (cv) {
+                    console.log('OpenCV loaded successfully.');
+                    setIsCvLoaded(true);
+                } else {
+                    console.error('OpenCV failed to load.');
+                }
+            };
+            document.body.appendChild(script);
+        } else {
+             if ((window as any).cv) setIsCvLoaded(true);
+        }
+
     }, []);
 
     useEffect(() => { if(isMounted) { document.documentElement.className = theme; localStorage.setItem('app-theme', theme); } }, [theme, isMounted]);
@@ -712,7 +842,7 @@ const App: FC = () => {
 
     if (!isMounted) return null;
 
-    const appContextValue: AppContextType = { theme, toggleTheme, showToast, currentPage, setCurrentPage, isMobileMenuOpen, setIsMobileMenuOpen, showShareModal, setShowShareModal, showLogoutModal, setShowLogoutModal, croppedImages, setCroppedImages };
+    const appContextValue: AppContextType = { theme, toggleTheme, showToast, currentPage, setCurrentPage, isMobileMenuOpen, setIsMobileMenuOpen, showShareModal, setShowShareModal, croppedImages, setCroppedImages, isCvLoaded };
 
     return (
         <AppContext.Provider value={appContextValue}>
@@ -733,7 +863,6 @@ const App: FC = () => {
                 </div>
                 <ToastContainer toasts={toasts} onDismiss={dismissToast} />
                 <ShareModal />
-                <LogoutModal />
             </div>
         </AppContext.Provider>
     );
@@ -821,36 +950,15 @@ const Sidebar: FC = () => {
     );
 };
 const Header: FC = () => {
-    const { showToast, setShowShareModal, setShowLogoutModal } = useAppContext();
-    const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+    const { setShowShareModal } = useAppContext();
     return (
         <header className="bg-[var(--theme-bg-primary)] text-[var(--theme-text-primary)] border-b border-[var(--theme-border-primary)] sticky top-0 z-[800] h-[var(--theme-header-height)] flex items-center shrink-0">
-            <div className="px-4 sm:px-6 w-full flex items-center justify-between">
-                <div className="flex-1 max-w-lg ml-12 md:ml-0">
-                    <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"> <Search size={16} className="text-[var(--theme-text-tertiary)]" /> </div>
-                        <input type="search" placeholder="Search..." className="block w-full pl-10 pr-4 py-2.5 text-sm rounded-lg border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent-primary)]" />
-                    </div>
-                </div>
+            <div className="px-4 sm:px-6 w-full flex items-center justify-end">
+                {/* Removed Search Bar */}
                 <div className="flex items-center space-x-1.5 sm:space-x-2">
-                    <button onClick={() => showToast('No new notifications.', 'info')} className="p-2.5 rounded-full text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)]"> <Bell size={20} /> </button>
+                    {/* Removed Notification Icon */}
                     <button onClick={() => setShowShareModal(true)} className="p-2.5 rounded-full text-[var(--theme-text-secondary)] hover:bg-[var(--theme-bg-tertiary)]"> <Share2 size={20} /> </button>
-                    <div className="relative">
-                        <button onClick={() => setUserDropdownOpen(!userDropdownOpen)} className="flex items-center space-x-2 p-2 rounded-full hover:bg-[var(--theme-bg-tertiary)]">
-                            <UserCircle size={22} className="text-[var(--theme-text-secondary)]" />
-                            <span className="text-sm font-medium hidden md:inline">User</span>
-                            <ChevronDown size={14} className={`text-[var(--theme-text-tertiary)] hidden md:inline transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`} />
-                        </button>
-                        <AnimatePresence>
-                            {userDropdownOpen && (
-                            <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }}
-                                className="absolute right-0 mt-2 w-40 bg-[var(--theme-bg-primary)] rounded-lg shadow-[var(--theme-shadow-lg)] py-1.5 z-[850] border border-[var(--theme-border-primary)]">
-                                <a href="#" onClick={(e) => { e.preventDefault(); showToast(`Profile clicked!`, 'info'); setUserDropdownOpen(false); }} className="block px-3.5 py-2 text-sm hover:bg-[var(--theme-bg-tertiary)]">Profile</a>
-                                <a href="#" onClick={(e) => { e.preventDefault(); setShowLogoutModal(true); setUserDropdownOpen(false); }} className="block px-3.5 py-2 text-sm text-red-500 hover:bg-[var(--theme-bg-tertiary)]">Logout</a>
-                            </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+                    {/* Removed User Dropdown and Logout Modal */}
                 </div>
             </div>
         </header>
@@ -896,20 +1004,6 @@ const ShareModal: FC = () => {
             <div className="flex items-center space-x-2">
                 <input type="text" value={window.location.href} readOnly className="flex-grow p-2.5 text-xs rounded-md border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)]" />
                 <button onClick={copyToClipboard} className="p-2.5 rounded-md bg-[var(--theme-accent-primary)] text-[var(--theme-accent-primary-text)] hover:opacity-90"> <Copy size={18}/> </button>
-            </div>
-        </Modal>
-    );
-};
-
-const LogoutModal: FC = () => {
-    const { showLogoutModal, setShowLogoutModal, showToast } = useAppContext();
-    const handleConfirmLogout = () => { setShowLogoutModal(false); showToast("You have been logged out.", "info"); };
-    return (
-        <Modal isOpen={showLogoutModal} onClose={() => setShowLogoutModal(false)} title="Confirm Logout">
-            <p className="text-sm text-[var(--theme-text-secondary)] mb-6">Are you sure you want to log out?</p>
-            <div className="flex justify-end space-x-3">
-                <button onClick={() => setShowLogoutModal(false)} className="px-4 py-2 text-sm rounded-lg border border-[var(--theme-border-secondary)] hover:bg-[var(--theme-bg-tertiary)]">Cancel</button>
-                <button onClick={handleConfirmLogout} className="px-4 py-2 text-sm rounded-lg bg-[var(--theme-accent-danger)] text-white hover:opacity-90">Logout</button>
             </div>
         </Modal>
     );
