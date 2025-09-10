@@ -4,7 +4,7 @@ import type { FC, ChangeEvent, MouseEvent, TouchEvent, ReactNode, DragEvent } fr
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Upload, Crop, RotateCw, Edit, FileImage, FileText, Trash2, CreditCard, Scan, Camera,
-    Info, HelpCircle, Sun, Moon,
+    Info, HelpCircle, Sun, Moon, Zap, ZapOff,
     Share2, Menu, X, CheckCircle, AlertTriangle, Copy, LayoutGrid, Printer, Loader2
 } from 'lucide-react';
 
@@ -233,6 +233,9 @@ const ToolPages: FC = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [processingMessage, setProcessingMessage] = useState('Processing...');
     const [isCameraOpen, setIsCameraOpen] = useState(false);
+    const [magnifierData, setMagnifierData] = useState<{ visible: boolean; x: number; y: number; cornerIndex: number | null }>({ visible: false, x: 0, y: 0, cornerIndex: null });
+    const [torchSupported, setTorchSupported] = useState(false);
+    const [torchOn, setTorchOn] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -252,17 +255,28 @@ const ToolPages: FC = () => {
     ], []);
 
     const handleCopyImage = useCallback(async (base64Data: string) => {
-        if (!navigator.clipboard || !navigator.clipboard.write) {
-            showToast('Clipboard API not available on this browser.', 'error');
+        if (!navigator.clipboard) {
+            showToast('Clipboard API not supported on this browser.', 'error');
             return;
         }
+        if (typeof ClipboardItem === "undefined" || !ClipboardItem) {
+             showToast('Copying images is not supported on this browser.', 'error');
+             return;
+        }
+    
         try {
             const blob = await (await fetch(base64Data)).blob();
             await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
             showToast('Image copied to clipboard!', 'success');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to copy image: ', err);
-            showToast('Failed to copy image.', 'error');
+            let message = 'Failed to copy image.';
+            if (err.name === 'NotAllowedError') {
+                message = 'Clipboard permission denied.';
+            } else if (err.name === 'SecurityError') {
+                message = 'Cannot copy image in this context.';
+            }
+            showToast(message, 'error');
         }
     }, [showToast]);
     
@@ -490,6 +504,15 @@ const ToolPages: FC = () => {
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     videoRef.current.srcObject = stream;
                     streamRef.current = stream;
+
+                    // Check for torch support after a short delay
+                    setTimeout(() => {
+                        const track = stream.getVideoTracks()[0];
+                        if (track) {
+                           const capabilities = track.getCapabilities();
+                           setTorchSupported(!!(capabilities as any).torch);
+                        }
+                    }, 500);
                 } catch (err) {
                     console.error("Camera error:", err);
                     showToast("Could not access camera. Please check permissions.", "error");
@@ -502,6 +525,8 @@ const ToolPages: FC = () => {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
                 streamRef.current = null;
+                setTorchOn(false);
+                setTorchSupported(false);
             }
         };
     }, [isCameraOpen, showToast]);
@@ -639,6 +664,8 @@ const ToolPages: FC = () => {
         });
         if (closestCornerIndex !== -1) {
             setDraggingCornerIndex(closestCornerIndex);
+            const cornerPos = getCanvasCoords(e);
+            setMagnifierData({ visible: true, x: cornerPos.x, y: cornerPos.y, cornerIndex: closestCornerIndex });
             if (navigator.vibrate) navigator.vibrate(50);
         }
     };
@@ -657,6 +684,7 @@ const ToolPages: FC = () => {
                         y: Math.max(0, Math.min(coords.y, imageDimensions.height)),
                     };
                     setCorners(newCorners);
+                    setMagnifierData(prev => ({ ...prev, x: coords.x, y: coords.y }));
                 }
                 animationFrameIdRef.current = null;
             });
@@ -670,6 +698,7 @@ const ToolPages: FC = () => {
             animationFrameIdRef.current = null;
         }
         setDraggingCornerIndex(null);
+        setMagnifierData({ visible: false, x: 0, y: 0, cornerIndex: null });
     };
 
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -839,6 +868,20 @@ const ToolPages: FC = () => {
             e.dataTransfer.clearData();
         }
     };
+    
+    const toggleTorch = async () => {
+        if (!streamRef.current || !torchSupported) return;
+        const track = streamRef.current.getVideoTracks()[0];
+        try {
+            await track.applyConstraints({
+                advanced: [{ torch: !torchOn } as any]
+            });
+            setTorchOn(!torchOn);
+        } catch (err) {
+            console.error('Error toggling torch:', err);
+            showToast('Could not control flash.', 'error');
+        }
+    };
 
     if (isProcessing) {
         return (
@@ -884,6 +927,9 @@ const ToolPages: FC = () => {
     }
 
     if (appState === 'cropping') {
+        const magnifierSize = 120;
+        const zoom = 2;
+        const offset = { x: 15, y: -15 };
         return (
             <div className="absolute inset-0 bg-gray-900 z-[1001] flex flex-col">
                 <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-md p-3 sm:p-4 flex justify-between items-center z-10">
@@ -893,9 +939,57 @@ const ToolPages: FC = () => {
                         <Crop className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> Apply
                     </button>
                 </header>
-                <main className="flex-grow flex justify-center items-center overflow-hidden p-4 sm:p-8 touch-none" onMouseUp={handleMouseUp} onTouchEnd={handleMouseUp} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove}>
+                <main className="flex-grow flex justify-center items-center overflow-hidden p-4 sm:p-8 touch-none relative" onMouseUp={handleMouseUp} onTouchEnd={handleMouseUp} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove}>
                     <canvas ref={cropCanvasRef} className="max-w-full max-h-full" onMouseDown={handleMouseDown} onTouchStart={handleMouseDown} />
+                     {magnifierData.visible && editingImage && (
+                        <div
+                            className="absolute pointer-events-none rounded-full border-4 border-white shadow-lg overflow-hidden"
+                            style={{
+                                left: magnifierData.x * imageDimensions.scale + offset.x - magnifierSize / 2,
+                                top: magnifierData.y * imageDimensions.scale + offset.y - magnifierSize / 2,
+                                width: magnifierSize,
+                                height: magnifierSize,
+                                transform: 'translate(-50%, -50%)',
+                                display: magnifierData.visible ? 'block' : 'none',
+                            }}
+                        >
+                            <img
+                                src={editingImage.displaySource}
+                                className="absolute"
+                                style={{
+                                    width: imageDimensions.width * imageDimensions.scale * zoom,
+                                    height: imageDimensions.height * imageDimensions.scale * zoom,
+                                    transform: `translate(${-magnifierData.x * imageDimensions.scale * zoom + magnifierSize / 2}px, ${-magnifierData.y * imageDimensions.scale * zoom + magnifierSize / 2}px)`,
+                                }}
+                                alt="Magnifier"
+                            />
+                        </div>
+                    )}
                 </main>
+            </div>
+        )
+    }
+    
+     if (isCameraOpen) {
+        return (
+            <div className="absolute inset-0 bg-black z-[1001] flex flex-col">
+                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover"></video>
+                <div className="absolute top-4 right-4 flex flex-col gap-4">
+                     {torchSupported && (
+                        <button
+                            onClick={toggleTorch}
+                            className={`p-3 rounded-full transition-colors ${torchOn ? 'bg-amber-400 text-gray-900' : 'bg-black/50 text-white'}`}
+                        >
+                            {torchOn ? <ZapOff size={24} /> : <Zap size={24} />}
+                        </button>
+                    )}
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent flex justify-center items-center">
+                    <button aria-label="Cancel" onClick={() => setIsCameraOpen(false)} className="absolute left-4 text-white font-semibold px-4 py-2 rounded-lg">Cancel</button>
+                    <button aria-label="Capture Photo" onClick={handleCapturePhoto} className="p-4 bg-white rounded-full shadow-lg group">
+                        <div className="w-12 h-12 rounded-full bg-white ring-4 ring-white/50 group-hover:scale-110 transition-transform"></div>
+                    </button>
+                </div>
             </div>
         )
     }
@@ -975,16 +1069,6 @@ const ToolPages: FC = () => {
                         <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} />
                     </div>
                 </Card>
-                <Modal isOpen={isCameraOpen} onClose={() => setIsCameraOpen(false)} title="Capture Image" className="max-w-2xl">
-                    <div className="relative">
-                        <video ref={videoRef} autoPlay playsInline className="w-full h-auto rounded-lg bg-black"></video>
-                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-                            <button aria-label="Capture Photo" onClick={handleCapturePhoto} className="p-4 bg-white rounded-full shadow-lg group">
-                                <div className="w-8 h-8 rounded-full bg-blue-600 group-hover:scale-110 transition-transform"></div>
-                            </button>
-                        </div>
-                    </div>
-                </Modal>
             </PageWrapper>
         )
     }
