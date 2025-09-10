@@ -233,7 +233,6 @@ const ToolPages: FC = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [processingMessage, setProcessingMessage] = useState('Processing...');
     const [isCameraOpen, setIsCameraOpen] = useState(false);
-    const [magnifierData, setMagnifierData] = useState<{ visible: boolean; x: number; y: number; cornerIndex: number | null }>({ visible: false, x: 0, y: 0, cornerIndex: null });
     const [torchSupported, setTorchSupported] = useState(false);
     const [torchOn, setTorchOn] = useState(false);
 
@@ -664,8 +663,6 @@ const ToolPages: FC = () => {
         });
         if (closestCornerIndex !== -1) {
             setDraggingCornerIndex(closestCornerIndex);
-            const cornerPos = getCanvasCoords(e);
-            setMagnifierData({ visible: true, x: cornerPos.x, y: cornerPos.y, cornerIndex: closestCornerIndex });
             if (navigator.vibrate) navigator.vibrate(50);
         }
     };
@@ -684,7 +681,6 @@ const ToolPages: FC = () => {
                         y: Math.max(0, Math.min(coords.y, imageDimensions.height)),
                     };
                     setCorners(newCorners);
-                    setMagnifierData(prev => ({ ...prev, x: coords.x, y: coords.y }));
                 }
                 animationFrameIdRef.current = null;
             });
@@ -698,7 +694,6 @@ const ToolPages: FC = () => {
             animationFrameIdRef.current = null;
         }
         setDraggingCornerIndex(null);
-        setMagnifierData({ visible: false, x: 0, y: 0, cornerIndex: null });
     };
 
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -927,9 +922,6 @@ const ToolPages: FC = () => {
     }
 
     if (appState === 'cropping') {
-        const magnifierSize = 120;
-        const zoom = 2;
-        const offset = { x: 15, y: -15 };
         return (
             <div className="absolute inset-0 bg-gray-900 z-[1001] flex flex-col">
                 <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-md p-3 sm:p-4 flex justify-between items-center z-10">
@@ -941,30 +933,6 @@ const ToolPages: FC = () => {
                 </header>
                 <main className="flex-grow flex justify-center items-center overflow-hidden p-4 sm:p-8 touch-none relative" onMouseUp={handleMouseUp} onTouchEnd={handleMouseUp} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove}>
                     <canvas ref={cropCanvasRef} className="max-w-full max-h-full" onMouseDown={handleMouseDown} onTouchStart={handleMouseDown} />
-                     {magnifierData.visible && editingImage && (
-                        <div
-                            className="absolute pointer-events-none rounded-full border-4 border-white shadow-lg overflow-hidden"
-                            style={{
-                                left: magnifierData.x * imageDimensions.scale + offset.x - magnifierSize / 2,
-                                top: magnifierData.y * imageDimensions.scale + offset.y - magnifierSize / 2,
-                                width: magnifierSize,
-                                height: magnifierSize,
-                                transform: 'translate(-50%, -50%)',
-                                display: magnifierData.visible ? 'block' : 'none',
-                            }}
-                        >
-                            <img
-                                src={editingImage.displaySource}
-                                className="absolute"
-                                style={{
-                                    width: imageDimensions.width * imageDimensions.scale * zoom,
-                                    height: imageDimensions.height * imageDimensions.scale * zoom,
-                                    transform: `translate(${-magnifierData.x * imageDimensions.scale * zoom + magnifierSize / 2}px, ${-magnifierData.y * imageDimensions.scale * zoom + magnifierSize / 2}px)`,
-                                }}
-                                alt="Magnifier"
-                            />
-                        </div>
-                    )}
                 </main>
             </div>
         )
@@ -1380,3 +1348,4 @@ const ShareModal: FC = () => {
 };
 
 export default App;
+
