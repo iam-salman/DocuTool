@@ -76,6 +76,8 @@ interface AppContextType {
     cvStatus: ScriptStatus;
     pdfLibStatus: ScriptStatus;
     loadPdfLib: () => void;
+    tesseractStatus: ScriptStatus;
+    loadTesseract: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -176,9 +178,10 @@ interface CroppedImagesComponentProps {
     selectable?: boolean;
     selectedIds?: number[];
     onSelect?: (id: number) => void;
+    onImageClick?: (img: CroppedImage) => void;
 }
 
-const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ onEdit, onCopy, selectable, selectedIds, onSelect }) => {
+const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ onEdit, onCopy, selectable, selectedIds, onSelect, onImageClick }) => {
     const { croppedImages, setCroppedImages } = useAppContext();
     return (
         <>
@@ -192,7 +195,13 @@ const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ on
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                      {croppedImages.map(img => (
                          <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group shadow-sm transition-all hover:shadow-lg hover:border-blue-500/50 ${selectable && selectedIds?.includes(img.id) ? 'border-blue-500' : 'border-transparent'}`}
-                             onClick={() => selectable && onSelect?.(img.id)}>
+                             onClick={() => {
+                                 if (selectable && onSelect) {
+                                     onSelect(img.id);
+                                 } else if (onImageClick) {
+                                     onImageClick(img);
+                                 }
+                             }}>
                              <img src={img.cropped} className="aspect-[4/3] object-contain bg-gray-100 dark:bg-gray-800 w-full rounded-md" alt="cropped item" style={{ borderRadius: '6px' }} />
                              <div className="absolute top-1.5 right-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                  <button aria-label="Copy Image" onClick={(e) => { e.stopPropagation(); onCopy(img.cropped); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Copy size={14} /></button>
@@ -215,8 +224,119 @@ const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ on
 });
 CroppedImagesComponent.displayName = 'CroppedImagesComponent';
 
+const ImageDetailModal: FC<{ image: CroppedImage | null; onClose: () => void; }> = ({ image, onClose }) => {
+    const { showToast, tesseractStatus, loadTesseract } = useAppContext();
+    const [ocrText, setOcrText] = useState('');
+    const [processedText, setProcessedText] = useState('');
+    const [isOcrRunning, setIsOcrRunning] = useState(false);
+    const textAreaRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        setOcrText('');
+        setProcessedText('');
+        setIsOcrRunning(false);
+        if (image) {
+            loadTesseract();
+        }
+    }, [image, loadTesseract]);
+
+    const handleExtractText = async () => {
+        if (!image || tesseractStatus !== 'loaded') {
+            showToast('OCR engine not ready. Please wait.', 'error');
+            return;
+        }
+        setIsOcrRunning(true);
+        try {
+            const { Tesseract } = window as any;
+            const worker = await Tesseract.createWorker('eng');
+            const { data: { text } } = await worker.recognize(image.cropped);
+            setOcrText(text);
+            setProcessedText(text);
+            await worker.terminate();
+        } catch (error) {
+            console.error("OCR Error:", error);
+            showToast('Failed to extract text from image.', 'error');
+        } finally {
+            setIsOcrRunning(false);
+        }
+    };
+    
+    const handleCopyText = () => {
+        if (textAreaRef.current) {
+            navigator.clipboard.writeText(processedText)
+                .then(() => showToast('Text copied to clipboard!', 'success'))
+                .catch(() => showToast('Failed to copy text.', 'error'));
+        }
+    };
+
+    const handleRemoveSpaces = () => {
+        setProcessedText(ocrText.replace(/\s+/g, ' ').trim());
+    };
+
+    const handleUpperCase = () => {
+        setProcessedText(ocrText.toUpperCase());
+    };
+
+    const handleLowerCase = () => {
+        setProcessedText(ocrText.toLowerCase());
+    };
+
+    const handleResetText = () => {
+        setProcessedText(ocrText);
+    };
+
+    if (!image) return null;
+
+    return (
+        <Modal isOpen={!!image} onClose={onClose} title="Image Details & OCR" className="max-w-4xl w-full">
+            <div className="flex flex-col md:flex-row gap-6 max-h-[80vh]">
+                <div className="md:w-1/2 flex-shrink-0">
+                    <img src={image.cropped} alt="Detail view" className="w-full h-auto max-h-[75vh] object-contain rounded-lg bg-gray-100 dark:bg-gray-800" />
+                </div>
+                <div className="md:w-1/2 flex flex-col min-h-0">
+                    <h4 className="font-semibold text-lg mb-2">Text Recognition (OCR)</h4>
+                    <button
+                        onClick={handleExtractText}
+                        disabled={isOcrRunning || tesseractStatus !== 'loaded'}
+                        className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-all text-sm disabled:bg-gray-400 disabled:cursor-not-allowed mb-4"
+                    >
+                        {isOcrRunning ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <FileText className="w-5 h-5 mr-2" />}
+                        {isOcrRunning ? 'Extracting...' : (tesseractStatus === 'loading' ? 'Loading Engine...' : 'Extract Text')}
+                    </button>
+                    
+                    <AnimatePresence>
+                        {ocrText && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex-grow flex flex-col min-h-0"
+                            >
+                                <textarea
+                                    ref={textAreaRef}
+                                    value={processedText}
+                                    onChange={(e) => setProcessedText(e.target.value)}
+                                    readOnly={isOcrRunning}
+                                    className="w-full flex-grow p-2 border border-[var(--theme-border-secondary)] rounded-md bg-[var(--theme-bg-secondary)] min-h-[150px] text-sm"
+                                    placeholder="Extracted text will appear here."
+                                />
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
+                                    <button onClick={handleCopyText} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Copy</button>
+                                    <button onClick={handleRemoveSpaces} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Trim Spaces</button>
+                                    <button onClick={handleUpperCase} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">UPPERCASE</button>
+                                    <button onClick={handleLowerCase} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">lowercase</button>
+                                    <button onClick={handleResetText} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 col-span-2 lg:col-span-1">Reset</button>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const ToolPages: FC = () => {
-    const { currentPage, setCurrentPage, showToast, croppedImages, setCroppedImages, cvStatus, pdfLibStatus, loadPdfLib } = useAppContext();
+    const { currentPage, showToast, croppedImages, setCroppedImages, cvStatus, pdfLibStatus, loadPdfLib } = useAppContext();
 
     const [appState, setAppState] = useState<AppState | 'idle'>('idle');
     const [editingImage, setEditingImage] = useState<CroppedImage | null>(null);
@@ -237,9 +357,11 @@ const ToolPages: FC = () => {
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [torchSupported, setTorchSupported] = useState(false);
     const [torchOn, setTorchOn] = useState(false);
-    // New state for Capture Corner feature
     const [isCaptureMode, setIsCaptureMode] = useState(false);
     const [capturingCornerIndex, setCapturingCornerIndex] = useState<number | null>(null);
+    const [selectedImageForDetail, setSelectedImageForDetail] = useState<CroppedImage | null>(null);
+    const [isPdfRenameModalOpen, setIsPdfRenameModalOpen] = useState(false);
+    const [pdfFileName, setPdfFileName] = useState('docutool-export');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -262,33 +384,33 @@ const ToolPages: FC = () => {
         const newCaptureModeState = !isCaptureMode;
         setIsCaptureMode(newCaptureModeState);
         if (newCaptureModeState) {
-            setCapturingCornerIndex(0); // Start capturing from the first corner
+            setCapturingCornerIndex(0);
         } else {
-            setCapturingCornerIndex(null); // Stop capturing
+            setCapturingCornerIndex(null);
         }
     };
 
     const handleCopyImage = useCallback(async (base64Data: string) => {
-        if (!navigator.clipboard) {
-            showToast('Clipboard API not supported on this browser.', 'error');
+        if (!navigator.clipboard?.write) {
+            showToast('Clipboard API not available in this browser/context.', 'error');
             return;
         }
-        if (typeof ClipboardItem === "undefined" || !ClipboardItem) {
-             showToast('Copying images is not supported on this browser.', 'error');
-             return;
-        }
-    
         try {
             const blob = await (await fetch(base64Data)).blob();
-            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-            showToast('Image copied to clipboard!', 'success');
+            if (typeof ClipboardItem !== 'undefined') {
+                const clipboardItem = new ClipboardItem({ [blob.type]: blob });
+                await navigator.clipboard.write([clipboardItem]);
+                showToast('Image copied to clipboard!', 'success');
+            } else {
+                showToast('Cannot copy images directly in this browser.', 'info');
+            }
         } catch (err: any) {
             console.error('Failed to copy image: ', err);
             let message = 'Failed to copy image.';
             if (err.name === 'NotAllowedError') {
-                message = 'Clipboard permission denied.';
+                message = 'Clipboard permission denied by browser.';
             } else if (err.name === 'SecurityError') {
-                message = 'Cannot copy image in this context.';
+                message = 'Copying requires a secure context (HTTPS).';
             }
             showToast(message, 'error');
         }
@@ -297,31 +419,23 @@ const ToolPages: FC = () => {
     const detectDocumentCorners = useCallback((img: HTMLImageElement): Point[] | null => {
         if (cvStatus !== 'loaded') return null;
         const cv = (window as any).cv;
-        
         let src: any, gray: any, blurred: any, edged: any, contours: any, hierarchy: any, kernel: any;
-        
         try {
             src = cv.imread(img);
             gray = new cv.Mat();
             cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-            
             blurred = new cv.Mat();
             cv.bilateralFilter(gray, blurred, 11, 17, 17);
-
             edged = new cv.Mat();
             cv.Canny(blurred, edged, 30, 200);
-
             kernel = cv.Mat.ones(5, 5, cv.CV_8U);
             cv.morphologyEx(edged, edged, cv.MORPH_CLOSE, kernel);
-
             contours = new cv.MatVector();
             hierarchy = new cv.Mat();
             cv.findContours(edged, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
             let maxArea = 0;
             let bestContour: any = null;
             const minArea = img.width * img.height / 50;
-
             for (let i = 0; i < contours.size(); ++i) {
                 const cnt = contours.get(i);
                 const area = cv.contourArea(cnt);
@@ -338,23 +452,18 @@ const ToolPages: FC = () => {
                 }
                 cnt.delete();
             }
-
             if (bestContour) {
                 const rawPoints: number[] = Array.from(bestContour.data32S as Int32Array);
                 const points: Point[] = [];
                 for (let i = 0; i < rawPoints.length; i += 2) {
                     points.push({ x: rawPoints[i], y: rawPoints[i+1] });
                 }
-                
                 bestContour.delete();
-                
                 points.sort((a, b) => a.y - b.y);
                 const top = points.slice(0, 2).sort((a, b) => a.x - b.x);
                 const bottom = points.slice(2, 4).sort((a,b) => a.x > b.x ? -1 : 1);
-                
                 return [top[0], top[1], bottom[0], bottom[1]];
             }
-            
         } catch (e) { 
             console.error("OpenCV error:", e); 
             showToast("Auto-detection failed.", "error"); 
@@ -370,7 +479,6 @@ const ToolPages: FC = () => {
         return null;
     }, [cvStatus, showToast]);
 
-
     const processAndSetImage = useCallback(async (imageDataUrl: string, existingImage: CroppedImage | null = null) => {
         setIsProcessing(true);
         setProcessingMessage('Loading Image...');
@@ -383,7 +491,6 @@ const ToolPages: FC = () => {
                     id: Date.now(), source: imageDataUrl, displaySource: displayUrl, cropped: '',
                     corners: [], rotation: 0, adjustments: DEFAULT_ADJUSTMENTS
                 };
-    
                 let initialCorners: Point[] | null = null;
                 if (existingImage && existingImage.corners && existingImage.corners.length === 4) {
                     initialCorners = existingImage.corners;
@@ -391,7 +498,6 @@ const ToolPages: FC = () => {
                     setProcessingMessage('Detecting Document...');
                     initialCorners = detectDocumentCorners(img);
                 }
-    
                 setEditingImage(imageToEdit);
                 setCorners(initialCorners || [
                     { x: 0, y: 0 }, { x: img.width, y: 0 },
@@ -400,7 +506,7 @@ const ToolPages: FC = () => {
                 setRotation(imageToEdit.rotation || 0);
                 setImageAdjustments(imageToEdit.adjustments || DEFAULT_ADJUSTMENTS);
                 setAppState('cropping');
-                setIsCaptureMode(false); // Ensure capture mode is off initially
+                setIsCaptureMode(false);
                 setCapturingCornerIndex(null);
                 setIsProcessing(false);
             };
@@ -434,12 +540,9 @@ const ToolPages: FC = () => {
                 cv.warpPerspective(src, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
                 const tempCanvas = document.createElement('canvas');
                 cv.imshow(tempCanvas, dst);
-
                 const highQualityCroppedUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
                 const croppedDataUrl = await resizeImage(highQualityCroppedUrl, 2000, 0.92);
-
                 src.delete(); dst.delete(); M.delete(); srcTri.delete(); dstTri.delete();
-
                 const newAdjustments: ImageAdjustments = { ...DEFAULT_ADJUSTMENTS };
                 const newCroppedImage: CroppedImage = { ...editingImage, cropped: croppedDataUrl, corners, rotation: 0, adjustments: newAdjustments };
                 setCroppedImages(prev => {
@@ -471,7 +574,6 @@ const ToolPages: FC = () => {
         const CARD_WIDTH_PX = cmToPx(cardWidthCm);
         const idFront = selectedImages[0];
         const idBack = selectedImages.length > 1 ? selectedImages[1] : null;
-
         const drawRoundedImage = (img: HTMLImageElement, x: number, y: number, width: number, height: number, radius: number) => {
             ctx.save();
             ctx.beginPath();
@@ -485,7 +587,6 @@ const ToolPages: FC = () => {
             ctx.drawImage(img, x, y, width, height);
             ctx.restore();
         };
-
         const drawImageOnCanvas = (imgData: CroppedImage, yPos: number, callback: () => void) => {
             const img = new Image();
             img.onload = () => {
@@ -506,6 +607,26 @@ const ToolPages: FC = () => {
         }
     }, [selectedIds, croppedImages, cardWidthCm]);
 
+    const handleSaveIdCardToGallery = () => {
+        const canvas = idCardCanvasRef.current;
+        if (!canvas) {
+            showToast('Could not save to gallery.', 'error');
+            return;
+        }
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const newImage: CroppedImage = {
+            id: Date.now(),
+            source: dataUrl,
+            displaySource: dataUrl,
+            cropped: dataUrl,
+            corners: [],
+            rotation: 0,
+            adjustments: DEFAULT_ADJUSTMENTS,
+        };
+        setCroppedImages(prev => [...prev, newImage]);
+        showToast('ID card sheet saved to gallery!', 'success');
+    };
+
     useEffect(() => {
         const startCamera = async () => {
             if (isCameraOpen && videoRef.current) {
@@ -514,7 +635,6 @@ const ToolPages: FC = () => {
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     videoRef.current.srcObject = stream;
                     streamRef.current = stream;
-
                     setTimeout(() => {
                         const track = stream.getVideoTracks()[0];
                         if (track) {
@@ -572,17 +692,13 @@ const ToolPages: FC = () => {
         const ctx = canvas.getContext('2d'); const container = canvas.parentElement;
         if (!ctx || !container) return;
         const img = imageRef.current;
-        
         const margin = 32;
         const availableWidth = container.clientWidth - margin * 2;
         const availableHeight = container.clientHeight - margin * 2;
         const scale = Math.min(availableWidth / img.width, availableHeight / img.height);
-        
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
-        
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
         if (corners.length === 4) {
             ctx.strokeStyle = '#3B82F6'; ctx.lineWidth = 3; ctx.beginPath();
             ctx.moveTo(corners[0].x * scale, corners[0].y * scale);
@@ -591,7 +707,6 @@ const ToolPages: FC = () => {
             ctx.lineTo(corners[3].x * scale, corners[3].y * scale);
             ctx.closePath();
             ctx.stroke();
-            
             corners.forEach((corner, index) => {
                 ctx.beginPath();
                 const isDragging = index === draggingCornerIndex;
@@ -600,7 +715,6 @@ const ToolPages: FC = () => {
                 ctx.arc(corner.x * scale, corner.y * scale, radius, 0, 2 * Math.PI);
                 ctx.fillStyle = isDragging ? '#F59E0B' : (isCapturing ? '#10B981' : '#3B82F6');
                 if (isCapturing) {
-                    // Apply pulsing effect directly to the context
                     const pulseScale = 1 + Math.sin(Date.now() / 200) * 0.2;
                     ctx.arc(corner.x * scale, corner.y * scale, radius * pulseScale, 0, 2 * Math.PI);
                 }
@@ -610,7 +724,6 @@ const ToolPages: FC = () => {
                 ctx.stroke();
             });
         }
-        
         if (isCaptureMode && capturingCornerIndex !== null) {
             const cornerLabels = ['Top-Left', 'Top-Right', 'Bottom-Right', 'Bottom-Left'];
             ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -618,7 +731,6 @@ const ToolPages: FC = () => {
             ctx.textAlign = 'center';
             ctx.fillText(`Click to set the ${cornerLabels[capturingCornerIndex]} corner`, canvas.width / 2, 30);
         }
-        
         setImageDimensions({ width: img.width, height: img.height, scale });
     }, [editingImage, corners, draggingCornerIndex, isCaptureMode, capturingCornerIndex]);
 
@@ -630,18 +742,14 @@ const ToolPages: FC = () => {
 
     useEffect(() => {
         if (appState !== 'cropping') return;
-    
         let animationFrameId: number;
-    
         const animate = () => {
             drawCropCanvas();
             animationFrameId = requestAnimationFrame(animate);
         };
-    
         if (isCaptureMode) {
             animate();
         }
-    
         return () => {
             if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
@@ -683,9 +791,8 @@ const ToolPages: FC = () => {
                 ? { ...ci, cropped: finalImage, rotation: rotation, adjustments: imageAdjustments }
                 : ci
         ));
-        showToast("Changes saved to gallery!", "success");
+        showToast("Changes saved!", "success");
         setAppState('idle');
-        setCurrentPage('gallery');
         setIsProcessing(false);
     };
 
@@ -719,7 +826,7 @@ const ToolPages: FC = () => {
                         y: Math.max(0, Math.min(coords.y, imageDimensions.height)),
                     };
                     setCorners(newCorners);
-                    drawCropCanvas(); // Redraw on move
+                    drawCropCanvas();
                 }
                 animationFrameIdRef.current = null;
             });
@@ -738,7 +845,6 @@ const ToolPages: FC = () => {
     const handleCanvasClickCapture = (e: MouseEvent | TouchEvent) => {
         e.preventDefault();
         if (capturingCornerIndex === null) return;
-
         const coords = getCanvasCoords(e);
         const newCorners = [...corners];
         newCorners[capturingCornerIndex] = {
@@ -746,7 +852,6 @@ const ToolPages: FC = () => {
             y: Math.max(0, Math.min(coords.y, imageDimensions.height)),
         };
         setCorners(newCorners);
-
         if (capturingCornerIndex < 3) {
             setCapturingCornerIndex(capturingCornerIndex + 1);
         } else {
@@ -820,7 +925,6 @@ const ToolPages: FC = () => {
         }
     };
 
-
     const handlePrint = () => {
         const canvas = idCardCanvasRef.current; if (!canvas) return;
         const dataUrl = canvas.toDataURL("image/png");
@@ -872,7 +976,7 @@ const ToolPages: FC = () => {
         setGallerySelection(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
     };
 
-    const handleCombineToPdf = async () => {
+    const executePdfCreation = async () => {
         if (gallerySelection.length === 0) return;
         setIsProcessing(true);
         setProcessingMessage('Creating PDF...');
@@ -884,7 +988,6 @@ const ToolPages: FC = () => {
         }
         const { jsPDF } = (window as any).jspdf;
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
-
         for (let i = 0; i < gallerySelection.length; i++) {
             const imgData = croppedImages.find(img => img.id === gallerySelection[i]);
             if (imgData) {
@@ -909,7 +1012,9 @@ const ToolPages: FC = () => {
                 pdf.addImage(imgData.cropped, 'JPEG', x, y, imgWidth, imgHeight);
             }
         }
-        pdf.save(`combined-document-${Date.now()}.pdf`);
+        const finalFileName = `${pdfFileName.trim() || 'docutool-export'}.pdf`;
+        pdf.save(finalFileName);
+        setIsPdfRenameModalOpen(false);
         setIsGallerySelectMode(false);
         setGallerySelection([]);
         setIsProcessing(false);
@@ -958,7 +1063,7 @@ const ToolPages: FC = () => {
     if (currentPage === 'help') return <PageWrapper title="Help"><Card><p>1. Go to Image Scanner to upload and crop your images.<br />2. Go to the Gallery to view saved images.<br />3. Go to ID Card Maker, select images, and create a printable document.</p></Card></PageWrapper>;
 
     if (idCardPreview) {
-        const widthOptions = [9, 10, 11, 13];
+        const widthOptions = [8, 9, 10, 11, 13, 15, 16, 17];
         return (
             <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 z-[1001] flex flex-col md:flex-row">
                 <div className="w-full md:w-80 flex-shrink-0 bg-[var(--theme-bg-primary)] p-4 sm:p-5 space-y-5 overflow-y-auto">
@@ -969,12 +1074,13 @@ const ToolPages: FC = () => {
                     </div>
                     <div>
                         <label className="text-sm font-medium text-[var(--theme-text-secondary)] mb-2 block">Card Width</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-4 gap-2">
                             {widthOptions.map(w => (<button key={w} onClick={() => setCardWidthCm(w)} className={`px-3 py-2 text-sm rounded-md border transition-colors ${cardWidthCm === w ? 'bg-[var(--theme-accent-primary)] text-white border-[var(--theme-accent-primary)]' : 'bg-transparent text-[var(--theme-text-primary)] border-[var(--theme-border-secondary)] hover:bg-[var(--theme-bg-tertiary)]'}`}>{w} cm</button>))}
                         </div>
                     </div>
                     <div className="space-y-2.5">
                         <h3 className="text-sm font-medium text-[var(--theme-text-secondary)]">Actions</h3>
+                        <button onClick={handleSaveIdCardToGallery} className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 transition-all text-sm"><LayoutGrid className="w-4 h-4 mr-2" /> Save to Gallery</button>
                         <button onClick={() => handleCopyImage(idCardCanvasRef.current?.toDataURL('image/png') ?? '')} className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 transition-all text-sm"><Copy className="w-4 h-4 mr-2" /> Copy Document</button>
                         <button onClick={() => handleDownloadIdCard('jpeg')} className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-all text-sm"><FileImage className="w-4 h-4 mr-2" /> Download JPG</button>
                         <button onClick={() => handleDownloadIdCard('pdf')} disabled={pdfLibStatus !== 'loaded'} className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all text-sm">{pdfLibStatus === 'loading' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />} Download PDF</button>
@@ -1105,7 +1211,7 @@ const ToolPages: FC = () => {
                     </div>
                     <div className="mt-8">
                         <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">Recently Cropped</h2>
-                        <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} />
+                        <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} onImageClick={(img) => setSelectedImageForDetail(img)} />
                     </div>
                 </Card>
             </PageWrapper>
@@ -1118,16 +1224,38 @@ const ToolPages: FC = () => {
                 <Card>
                     <div className="flex justify-end mb-4 gap-2">
                         {isGallerySelectMode && (
-                            <button onClick={handleCombineToPdf} disabled={gallerySelection.length === 0 || pdfLibStatus !== 'loaded'} className="inline-flex items-center px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400">
-                                {pdfLibStatus === 'loading' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText size={16} className="mr-2" />} Combine to PDF ({gallerySelection.length})
+                            <button 
+                                onClick={() => setIsPdfRenameModalOpen(true)}
+                                disabled={gallerySelection.length === 0 || pdfLibStatus !== 'loaded'}
+                                className="inline-flex items-center px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400"
+                            >
+                                {pdfLibStatus === 'loading' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText size={16} className="mr-2" />} 
+                                {gallerySelection.length > 1 ? `Combine to PDF (${gallerySelection.length})` : 'Save as PDF'}
                             </button>
                         )}
                         <button onClick={() => { setIsGallerySelectMode(s => !s); setGallerySelection([]); }} className="inline-flex items-center px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                             {isGallerySelectMode ? "Cancel" : "Select"}
                         </button>
                     </div>
-                    <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} selectable={isGallerySelectMode} selectedIds={gallerySelection} onSelect={handleGallerySelection} />
+                    <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} selectable={isGallerySelectMode} selectedIds={gallerySelection} onSelect={handleGallerySelection} onImageClick={(img) => !isGallerySelectMode && setSelectedImageForDetail(img)} />
                 </Card>
+                 <Modal isOpen={isPdfRenameModalOpen} onClose={() => setIsPdfRenameModalOpen(false)} title="Name Your PDF">
+                    <div>
+                        <label className="text-sm font-medium text-[var(--theme-text-secondary)] mb-1.5 block">File Name</label>
+                        <input 
+                            type="text" 
+                            value={pdfFileName} 
+                            onChange={(e) => setPdfFileName(e.target.value)} 
+                            placeholder="Enter file name" 
+                            className="w-full px-3 py-2 text-sm rounded-md border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent-primary)]" 
+                        />
+                    </div>
+                    <div className="mt-6 flex justify-end">
+                        <button onClick={executePdfCreation} className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            <FileText size={16} className="mr-2" /> Create PDF
+                        </button>
+                    </div>
+                </Modal>
             </PageWrapper>
         )
     }
@@ -1163,7 +1291,12 @@ const ToolPages: FC = () => {
         )
     }
 
-    return <div />;
+    return (
+        <>
+            <ImageDetailModal image={selectedImageForDetail} onClose={() => setSelectedImageForDetail(null)} />
+            <div />
+        </>
+    );
 }
 
 const App: FC = () => {
@@ -1176,6 +1309,7 @@ const App: FC = () => {
     const [croppedImages, setCroppedImages] = useLocalStorageState<CroppedImage[]>('docutool-images', []);
     const [cvStatus, setCvStatus] = useState<ScriptStatus>('loading');
     const [pdfLibStatus, setPdfLibStatus] = useState<ScriptStatus>('idle');
+    const [tesseractStatus, setTesseractStatus] = useState<ScriptStatus>('idle');
 
     const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
         setToasts(prev => [...prev, { id: Date.now() + Math.random(), message, type }]);
@@ -1199,13 +1333,30 @@ const App: FC = () => {
         }
     }, [pdfLibStatus, showToast]);
 
+    const loadTesseract = useCallback(() => {
+        if (tesseractStatus === 'idle') {
+            setTesseractStatus('loading');
+            const scriptId = 'tesseract-script';
+            if (document.getElementById(scriptId)) {
+                if ((window as any).Tesseract) setTesseractStatus('loaded');
+                return;
+            }
+            const script = document.createElement('script');
+            script.id = scriptId;
+            script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+            script.async = true;
+            script.onload = () => setTesseractStatus('loaded');
+            script.onerror = () => { setTesseractStatus('error'); showToast("Failed to load OCR engine.", "error"); }
+            document.body.appendChild(script);
+        }
+    }, [tesseractStatus, showToast]);
+
 
     useEffect(() => {
         setIsMounted(true);
         const hashPage = window.location.hash.substring(1);
         if (hashPage && SIDEBAR_ITEMS.some(i => i.path === hashPage)) _setCurrentPage(hashPage);
         else window.location.hash = CONSTANTS.DEFAULT_PAGE;
-
         const scriptId = 'opencv-script';
         if (!document.getElementById(scriptId)) {
             const script = document.createElement('script');
@@ -1263,7 +1414,8 @@ const App: FC = () => {
     const appContextValue: AppContextType = {
         theme, toggleTheme, showToast, currentPage, setCurrentPage,
         isMobileMenuOpen, setIsMobileMenuOpen, showShareModal, setShowShareModal,
-        croppedImages, setCroppedImages, cvStatus, pdfLibStatus, loadPdfLib
+        croppedImages, setCroppedImages, cvStatus, pdfLibStatus, loadPdfLib,
+        tesseractStatus, loadTesseract
     };
 
     return (
