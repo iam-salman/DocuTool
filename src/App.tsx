@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Upload, Crop, RotateCw, Edit, FileImage, FileText, Trash2, CreditCard, Scan, Camera,
     Info, HelpCircle, Sun, Moon, Zap, ZapOff,
-    Share2, Menu, X, CheckCircle, AlertTriangle, Copy, LayoutGrid, Printer, Loader2
+    Share2, Menu, X, CheckCircle, AlertTriangle, Copy, LayoutGrid, Printer, Loader2, MousePointerClick
 } from 'lucide-react';
 
 type FilterPreset = 'none' | 'magic' | 'grayscale' | 'bw';
@@ -151,6 +151,8 @@ const GlobalStyles: FC = () => (
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fadeIn { animation: fadeIn 0.25s ease-out forwards; }
     .hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes pulse-dot { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.7; } }
+    .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
     `}</style>
 );
 
@@ -182,31 +184,31 @@ const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ on
         <>
             {croppedImages.length === 0 ? (
                  <div className="text-center py-10 px-4">
-                    <LayoutGrid size={40} className="mx-auto text-gray-300 dark:text-gray-600" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-500">No Scanned Images</h3>
-                    <p className="mt-1 text-sm text-gray-400">Go to the scanner to add some.</p>
-                </div>
+                     <LayoutGrid size={40} className="mx-auto text-gray-300 dark:text-gray-600" />
+                     <h3 className="mt-2 text-sm font-medium text-gray-500">No Scanned Images</h3>
+                     <p className="mt-1 text-sm text-gray-400">Go to the scanner to add some.</p>
+                 </div>
             ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                    {croppedImages.map(img => (
-                        <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group shadow-sm transition-all hover:shadow-lg hover:border-blue-500/50 ${selectable && selectedIds?.includes(img.id) ? 'border-blue-500' : 'border-transparent'}`}
-                            onClick={() => selectable && onSelect?.(img.id)}>
-                            <img src={img.cropped} className="aspect-[4/3] object-contain bg-gray-100 dark:bg-gray-800 w-full rounded-md" alt="cropped item" style={{ borderRadius: '6px' }} />
-                            <div className="absolute top-1.5 right-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button aria-label="Copy Image" onClick={(e) => { e.stopPropagation(); onCopy(img.cropped); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Copy size={14} /></button>
-                                <button aria-label="Edit Image" onClick={(e) => { e.stopPropagation(); onEdit(img); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Edit size={14} /></button>
-                                <button aria-label="Delete Image" onClick={(e) => { e.stopPropagation(); setCroppedImages(imgs => imgs.filter(i => i.id !== img.id)); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Trash2 size={14} /></button>
-                            </div>
-                            {selectable && (
-                                <div className={`absolute inset-0 flex items-center justify-center transition-all cursor-pointer ${selectedIds?.includes(img.id) ? 'bg-black/50' : 'bg-black/0 group-hover:bg-black/50'}`}>
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${selectedIds?.includes(img.id) ? 'bg-blue-600 scale-100' : 'bg-white/50 border scale-0 group-hover:scale-100'}`}>
-                                        {selectedIds?.includes(img.id) && <CheckCircle size={16} className="text-white" />}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
+                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                     {croppedImages.map(img => (
+                         <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group shadow-sm transition-all hover:shadow-lg hover:border-blue-500/50 ${selectable && selectedIds?.includes(img.id) ? 'border-blue-500' : 'border-transparent'}`}
+                             onClick={() => selectable && onSelect?.(img.id)}>
+                             <img src={img.cropped} className="aspect-[4/3] object-contain bg-gray-100 dark:bg-gray-800 w-full rounded-md" alt="cropped item" style={{ borderRadius: '6px' }} />
+                             <div className="absolute top-1.5 right-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <button aria-label="Copy Image" onClick={(e) => { e.stopPropagation(); onCopy(img.cropped); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Copy size={14} /></button>
+                                 <button aria-label="Edit Image" onClick={(e) => { e.stopPropagation(); onEdit(img); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Edit size={14} /></button>
+                                 <button aria-label="Delete Image" onClick={(e) => { e.stopPropagation(); setCroppedImages(imgs => imgs.filter(i => i.id !== img.id)); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Trash2 size={14} /></button>
+                             </div>
+                             {selectable && (
+                                 <div className={`absolute inset-0 flex items-center justify-center transition-all cursor-pointer ${selectedIds?.includes(img.id) ? 'bg-black/50' : 'bg-black/0 group-hover:bg-black/50'}`}>
+                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${selectedIds?.includes(img.id) ? 'bg-blue-600 scale-100' : 'bg-white/50 border scale-0 group-hover:scale-100'}`}>
+                                         {selectedIds?.includes(img.id) && <CheckCircle size={16} className="text-white" />}
+                                     </div>
+                                 </div>
+                             )}
+                         </div>
+                     ))}
+                 </div>
             )}
         </>
     )
@@ -235,6 +237,9 @@ const ToolPages: FC = () => {
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [torchSupported, setTorchSupported] = useState(false);
     const [torchOn, setTorchOn] = useState(false);
+    // New state for Capture Corner feature
+    const [isCaptureMode, setIsCaptureMode] = useState(false);
+    const [capturingCornerIndex, setCapturingCornerIndex] = useState<number | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -252,6 +257,16 @@ const ToolPages: FC = () => {
         { id: 'grayscale', name: 'Grayscale', filter: 'grayscale(1)' },
         { id: 'bw', name: 'B & W', filter: 'grayscale(1) contrast(2.5) brightness(1.1)' },
     ], []);
+    
+    const handleCaptureToggle = () => {
+        const newCaptureModeState = !isCaptureMode;
+        setIsCaptureMode(newCaptureModeState);
+        if (newCaptureModeState) {
+            setCapturingCornerIndex(0); // Start capturing from the first corner
+        } else {
+            setCapturingCornerIndex(null); // Stop capturing
+        }
+    };
 
     const handleCopyImage = useCallback(async (base64Data: string) => {
         if (!navigator.clipboard) {
@@ -279,7 +294,6 @@ const ToolPages: FC = () => {
         }
     }, [showToast]);
     
-    // REVAMPED: This is a much more robust detection algorithm using adaptive thresholding.
     const detectDocumentCorners = useCallback((img: HTMLImageElement): Point[] | null => {
         if (cvStatus !== 'loaded') return null;
         const cv = (window as any).cv;
@@ -297,7 +311,6 @@ const ToolPages: FC = () => {
             edged = new cv.Mat();
             cv.Canny(blurred, edged, 30, 200);
 
-            // Use morphological closing to connect separated edges
             kernel = cv.Mat.ones(5, 5, cv.CV_8U);
             cv.morphologyEx(edged, edged, cv.MORPH_CLOSE, kernel);
 
@@ -307,7 +320,7 @@ const ToolPages: FC = () => {
 
             let maxArea = 0;
             let bestContour: any = null;
-            const minArea = img.width * img.height / 50; // Require contour to be at least 2% of the image
+            const minArea = img.width * img.height / 50;
 
             for (let i = 0; i < contours.size(); ++i) {
                 const cnt = contours.get(i);
@@ -335,7 +348,6 @@ const ToolPages: FC = () => {
                 
                 bestContour.delete();
                 
-                // Sort points: top-left, top-right, bottom-right, bottom-left
                 points.sort((a, b) => a.y - b.y);
                 const top = points.slice(0, 2).sort((a, b) => a.x - b.x);
                 const bottom = points.slice(2, 4).sort((a,b) => a.x > b.x ? -1 : 1);
@@ -347,7 +359,6 @@ const ToolPages: FC = () => {
             console.error("OpenCV error:", e); 
             showToast("Auto-detection failed.", "error"); 
         } finally {
-            // Ensure all Mat objects are deleted to prevent memory leaks
             if (src) src.delete();
             if (gray) gray.delete();
             if (blurred) blurred.delete();
@@ -374,23 +385,23 @@ const ToolPages: FC = () => {
                 };
     
                 let initialCorners: Point[] | null = null;
-                // If we are re-cropping, use the previously saved corners.
                 if (existingImage && existingImage.corners && existingImage.corners.length === 4) {
                     initialCorners = existingImage.corners;
                 } else {
-                    // Otherwise, try to detect new corners.
                     setProcessingMessage('Detecting Document...');
                     initialCorners = detectDocumentCorners(img);
                 }
     
                 setEditingImage(imageToEdit);
-                setCorners(initialCorners || [ // Fallback to full image if no corners are found
+                setCorners(initialCorners || [
                     { x: 0, y: 0 }, { x: img.width, y: 0 },
                     { x: img.width, y: img.height }, { x: 0, y: img.height },
                 ]);
                 setRotation(imageToEdit.rotation || 0);
                 setImageAdjustments(imageToEdit.adjustments || DEFAULT_ADJUSTMENTS);
                 setAppState('cropping');
+                setIsCaptureMode(false); // Ensure capture mode is off initially
+                setCapturingCornerIndex(null);
                 setIsProcessing(false);
             };
             img.src = displayUrl;
@@ -504,7 +515,6 @@ const ToolPages: FC = () => {
                     videoRef.current.srcObject = stream;
                     streamRef.current = stream;
 
-                    // Check for torch support after a short delay
                     setTimeout(() => {
                         const track = stream.getVideoTracks()[0];
                         if (track) {
@@ -563,10 +573,9 @@ const ToolPages: FC = () => {
         if (!ctx || !container) return;
         const img = imageRef.current;
         
-        const margin = 32; // This ensures a 32px gap around the canvas
+        const margin = 32;
         const availableWidth = container.clientWidth - margin * 2;
         const availableHeight = container.clientHeight - margin * 2;
-
         const scale = Math.min(availableWidth / img.width, availableHeight / img.height);
         
         canvas.width = img.width * scale;
@@ -585,18 +594,33 @@ const ToolPages: FC = () => {
             
             corners.forEach((corner, index) => {
                 ctx.beginPath();
-                const isActive = index === draggingCornerIndex;
-                const radius = isActive ? 14 : 10;
+                const isDragging = index === draggingCornerIndex;
+                const isCapturing = isCaptureMode && index === capturingCornerIndex;
+                const radius = isDragging || isCapturing ? 14 : 10;
                 ctx.arc(corner.x * scale, corner.y * scale, radius, 0, 2 * Math.PI);
-                ctx.fillStyle = isActive ? '#F59E0B' : '#3B82F6';
+                ctx.fillStyle = isDragging ? '#F59E0B' : (isCapturing ? '#10B981' : '#3B82F6');
+                if (isCapturing) {
+                    // Apply pulsing effect directly to the context
+                    const pulseScale = 1 + Math.sin(Date.now() / 200) * 0.2;
+                    ctx.arc(corner.x * scale, corner.y * scale, radius * pulseScale, 0, 2 * Math.PI);
+                }
                 ctx.fill();
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 2;
                 ctx.stroke();
             });
         }
+        
+        if (isCaptureMode && capturingCornerIndex !== null) {
+            const cornerLabels = ['Top-Left', 'Top-Right', 'Bottom-Right', 'Bottom-Left'];
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.font = 'bold 16px ' + CONSTANTS.FONT_URL;
+            ctx.textAlign = 'center';
+            ctx.fillText(`Click to set the ${cornerLabels[capturingCornerIndex]} corner`, canvas.width / 2, 30);
+        }
+        
         setImageDimensions({ width: img.width, height: img.height, scale });
-    }, [editingImage, corners, draggingCornerIndex]);
+    }, [editingImage, corners, draggingCornerIndex, isCaptureMode, capturingCornerIndex]);
 
 
     useEffect(() => {
@@ -604,12 +628,26 @@ const ToolPages: FC = () => {
         return () => window.removeEventListener('resize', drawCropCanvas);
     }, [appState, drawCropCanvas]);
 
-    // Re-draw canvas when dragging index changes for visual feedback
     useEffect(() => {
-        if (appState === 'cropping') {
+        if (appState !== 'cropping') return;
+    
+        let animationFrameId: number;
+    
+        const animate = () => {
             drawCropCanvas();
+            animationFrameId = requestAnimationFrame(animate);
+        };
+    
+        if (isCaptureMode) {
+            animate();
         }
-    }, [draggingCornerIndex, appState, drawCropCanvas]);
+    
+        return () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+        };
+    }, [isCaptureMode, appState, drawCropCanvas]);
 
 
     const getCanvasCoords = (e: MouseEvent | TouchEvent): Point => {
@@ -681,6 +719,7 @@ const ToolPages: FC = () => {
                         y: Math.max(0, Math.min(coords.y, imageDimensions.height)),
                     };
                     setCorners(newCorners);
+                    drawCropCanvas(); // Redraw on move
                 }
                 animationFrameIdRef.current = null;
             });
@@ -694,6 +733,34 @@ const ToolPages: FC = () => {
             animationFrameIdRef.current = null;
         }
         setDraggingCornerIndex(null);
+    };
+
+    const handleCanvasClickCapture = (e: MouseEvent | TouchEvent) => {
+        e.preventDefault();
+        if (capturingCornerIndex === null) return;
+
+        const coords = getCanvasCoords(e);
+        const newCorners = [...corners];
+        newCorners[capturingCornerIndex] = {
+            x: Math.max(0, Math.min(coords.x, imageDimensions.width)),
+            y: Math.max(0, Math.min(coords.y, imageDimensions.height)),
+        };
+        setCorners(newCorners);
+
+        if (capturingCornerIndex < 3) {
+            setCapturingCornerIndex(capturingCornerIndex + 1);
+        } else {
+            setCapturingCornerIndex(null);
+            setIsCaptureMode(false);
+        }
+    };
+
+    const handleCanvasInteractionStart = (e: MouseEvent | TouchEvent) => {
+        if (isCaptureMode) {
+            handleCanvasClickCapture(e);
+        } else {
+            handleMouseDown(e);
+        }
     };
 
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -926,13 +993,17 @@ const ToolPages: FC = () => {
             <div className="absolute inset-0 bg-gray-900 z-[1001] flex flex-col">
                 <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-md p-3 sm:p-4 flex justify-between items-center z-10">
                     <button onClick={() => setAppState('idle')} className="font-semibold px-4 py-2 rounded-lg text-[var(--theme-accent-primary)] hover:bg-[var(--theme-bg-tertiary)] transition-colors text-sm sm:text-base">Cancel</button>
-                    <h2 className="text-base sm:text-lg font-bold text-gray-800 dark:text-white">Adjust Corners</h2>
-                    <button onClick={handleApplyCrop} className="inline-flex items-center px-4 py-2 bg-[var(--theme-accent-primary)] text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity text-sm sm:text-base">
-                        <Crop className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> Apply
-                    </button>
+                    <div className="flex items-center gap-2">
+                         <button onClick={handleCaptureToggle} className={`inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${isCaptureMode ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                             <MousePointerClick className="w-4 h-4 mr-2" /> {isCaptureMode ? 'Capturing...' : 'Capture Corners'}
+                         </button>
+                         <button onClick={handleApplyCrop} className="inline-flex items-center px-4 py-2 bg-[var(--theme-accent-primary)] text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity text-sm sm:text-base">
+                             <Crop className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> Apply
+                         </button>
+                    </div>
                 </header>
                 <main className="flex-grow flex justify-center items-center overflow-hidden p-4 sm:p-8 touch-none relative" onMouseUp={handleMouseUp} onTouchEnd={handleMouseUp} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove}>
-                    <canvas ref={cropCanvasRef} className="max-w-full max-h-full" onMouseDown={handleMouseDown} onTouchStart={handleMouseDown} />
+                    <canvas ref={cropCanvasRef} className="max-w-full max-h-full" onMouseDown={handleCanvasInteractionStart} onTouchStart={handleCanvasInteractionStart} />
                 </main>
             </div>
         )
@@ -943,14 +1014,14 @@ const ToolPages: FC = () => {
             <div className="absolute inset-0 bg-black z-[1001] flex flex-col">
                 <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover"></video>
                 <div className="absolute top-4 right-4 flex flex-col gap-4">
-                     {torchSupported && (
-                        <button
-                            onClick={toggleTorch}
-                            className={`p-3 rounded-full transition-colors ${torchOn ? 'bg-amber-400 text-gray-900' : 'bg-black/50 text-white'}`}
-                        >
-                            {torchOn ? <ZapOff size={24} /> : <Zap size={24} />}
-                        </button>
-                    )}
+                       {torchSupported && (
+                            <button
+                                onClick={toggleTorch}
+                                className={`p-3 rounded-full transition-colors ${torchOn ? 'bg-amber-400 text-gray-900' : 'bg-black/50 text-white'}`}
+                            >
+                                {torchOn ? <ZapOff size={24} /> : <Zap size={24} />}
+                            </button>
+                        )}
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent flex justify-center items-center">
                     <button aria-label="Cancel" onClick={() => setIsCameraOpen(false)} className="absolute left-4 text-white font-semibold px-4 py-2 rounded-lg">Cancel</button>
@@ -1348,4 +1419,3 @@ const ShareModal: FC = () => {
 };
 
 export default App;
-
