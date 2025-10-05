@@ -13,6 +13,18 @@ type AppState = 'cropping' | 'editing';
 type ScriptStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type Point = { x: number; y: number };
 
+// NEW: Interface for Tesseract's word object for type safety
+interface TesseractWord {
+    text: string;
+    confidence: number;
+    bbox: {
+        x0: number;
+        y0: number;
+        x1: number;
+        y1: number;
+    };
+}
+
 interface FilterOption {
     id: FilterPreset;
     name: string;
@@ -187,35 +199,35 @@ const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ on
         <>
             {croppedImages.length === 0 ? (
                  <div className="text-center py-10 px-4">
-                     <LayoutGrid size={40} className="mx-auto text-gray-300 dark:text-gray-600" />
-                     <h3 className="mt-2 text-sm font-medium text-gray-500">No Scanned Images</h3>
-                     <p className="mt-1 text-sm text-gray-400">Go to the scanner to add some.</p>
+                      <LayoutGrid size={40} className="mx-auto text-gray-300 dark:text-gray-600" />
+                      <h3 className="mt-2 text-sm font-medium text-gray-500">No Scanned Images</h3>
+                      <p className="mt-1 text-sm text-gray-400">Go to the scanner to add some.</p>
                  </div>
             ) : (
                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                      {croppedImages.map(img => (
-                         <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group shadow-sm transition-all hover:shadow-lg hover:border-blue-500/50 ${selectable && selectedIds?.includes(img.id) ? 'border-blue-500' : 'border-transparent'}`}
-                             onClick={() => {
-                                 if (selectable && onSelect) {
-                                     onSelect(img.id);
-                                 } else if (onImageClick) {
-                                     onImageClick(img);
-                                 }
-                             }}>
-                             <img src={img.cropped} className="aspect-[4/3] object-contain bg-gray-100 dark:bg-gray-800 w-full rounded-md" alt="cropped item" style={{ borderRadius: '6px' }} />
-                             <div className="absolute top-1.5 right-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                 <button aria-label="Copy Image" onClick={(e) => { e.stopPropagation(); onCopy(img.cropped); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Copy size={14} /></button>
-                                 <button aria-label="Edit Image" onClick={(e) => { e.stopPropagation(); onEdit(img); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Edit size={14} /></button>
-                                 <button aria-label="Delete Image" onClick={(e) => { e.stopPropagation(); setCroppedImages(imgs => imgs.filter(i => i.id !== img.id)); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Trash2 size={14} /></button>
-                             </div>
-                             {selectable && (
-                                 <div className={`absolute inset-0 flex items-center justify-center transition-all cursor-pointer ${selectedIds?.includes(img.id) ? 'bg-black/50' : 'bg-black/0 group-hover:bg-black/50'}`}>
-                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${selectedIds?.includes(img.id) ? 'bg-blue-600 scale-100' : 'bg-white/50 border scale-0 group-hover:scale-100'}`}>
-                                         {selectedIds?.includes(img.id) && <CheckCircle size={16} className="text-white" />}
-                                     </div>
-                                 </div>
-                             )}
-                         </div>
+                          <div key={img.id} className={`relative border-2 rounded-lg overflow-hidden group shadow-sm transition-all hover:shadow-lg hover:border-blue-500/50 ${selectable && selectedIds?.includes(img.id) ? 'border-blue-500' : 'border-transparent'}`}
+                               onClick={() => {
+                                   if (selectable && onSelect) {
+                                       onSelect(img.id);
+                                   } else if (onImageClick) {
+                                       onImageClick(img);
+                                   }
+                               }}>
+                              <img src={img.cropped} className="aspect-[4/3] object-contain bg-gray-100 dark:bg-gray-800 w-full rounded-md" alt="cropped item" style={{ borderRadius: '6px' }} />
+                              <div className="absolute top-1.5 right-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button aria-label="Copy Image" onClick={(e) => { e.stopPropagation(); onCopy(img.cropped); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Copy size={14} /></button>
+                                  <button aria-label="Edit Image" onClick={(e) => { e.stopPropagation(); onEdit(img); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Edit size={14} /></button>
+                                  <button aria-label="Delete Image" onClick={(e) => { e.stopPropagation(); setCroppedImages(imgs => imgs.filter(i => i.id !== img.id)); }} className="p-1.5 bg-black/50 text-white rounded-full hover:bg-black/75"><Trash2 size={14} /></button>
+                              </div>
+                              {selectable && (
+                                   <div className={`absolute inset-0 flex items-center justify-center transition-all cursor-pointer ${selectedIds?.includes(img.id) ? 'bg-black/50' : 'bg-black/0 group-hover:bg-black/50'}`}>
+                                       <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${selectedIds?.includes(img.id) ? 'bg-blue-600 scale-100' : 'bg-white/50 border scale-0 group-hover:scale-100'}`}>
+                                           {selectedIds?.includes(img.id) && <CheckCircle size={16} className="text-white" />}
+                                       </div>
+                                   </div>
+                              )}
+                          </div>
                      ))}
                  </div>
             )}
@@ -225,106 +237,269 @@ const CroppedImagesComponent: FC<CroppedImagesComponentProps> = React.memo(({ on
 CroppedImagesComponent.displayName = 'CroppedImagesComponent';
 
 const ImageDetailModal: FC<{ image: CroppedImage | null; onClose: () => void; }> = ({ image, onClose }) => {
-    const { showToast, tesseractStatus, loadTesseract } = useAppContext();
-    const [ocrText, setOcrText] = useState('');
-    const [processedText, setProcessedText] = useState('');
+    const { showToast, tesseractStatus, loadTesseract, cvStatus } = useAppContext();
+    const [ocrData, setOcrData] = useState<TesseractWord[]>([]);
     const [isOcrRunning, setIsOcrRunning] = useState(false);
-    const textAreaRef = useRef<HTMLTextAreaElement>(null);
+    const [ocrMessage, setOcrMessage] = useState('Start OCR');
+
+    const [editableText, setEditableText] = useState('');
+    const [rawOcrText, setRawOcrText] = useState('');
+    const [averageConfidence, setAverageConfidence] = useState(0);
+
+    const [selectionBox, setSelectionBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+    const [isSelecting, setIsSelecting] = useState(false);
+    const [selectedWords, setSelectedWords] = useState<TesseractWord[]>([]);
+
+    const imageContainerRef = useRef<HTMLDivElement>(null);
+    const [imageDimensions, setImageDimensions] = useState({ width: 1, height: 1 });
+
+    // NEW: State for controlling preprocessing
+    const [usePreprocessing, setUsePreprocessing] = useState(true);
+
+    const preprocessImageForOCR = async (imageUrl: string): Promise<string> => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                const cv = (window as any).cv;
+                if (!cv) {
+                    showToast('OpenCV not ready for preprocessing.', 'error');
+                    resolve(imageUrl);
+                    return;
+                }
+                try {
+                    const src = cv.imread(img);
+                    const gray = new cv.Mat();
+                    const blurred = new cv.Mat();
+                    const thresh = new cv.Mat();
+                    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+                    // Params for blur (Size(5,5)) and adaptiveThreshold (11, 2) can be tweaked for different image types.
+                    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+                    cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+                    
+                    const canvas = document.createElement('canvas');
+                    cv.imshow(canvas, thresh);
+                    resolve(canvas.toDataURL('image/png'));
+
+                    src.delete(); gray.delete(); blurred.delete(); thresh.delete();
+                } catch (error) {
+                    console.error("Preprocessing error:", error);
+                    showToast("Image preprocessing failed.", "error");
+                    resolve(imageUrl);
+                }
+            };
+            img.src = imageUrl;
+        });
+    };
 
     useEffect(() => {
-        setOcrText('');
-        setProcessedText('');
-        setIsOcrRunning(false);
+        setOcrData([]);
+        setSelectedWords([]);
+        setSelectionBox(null);
+        setEditableText('');
+        setRawOcrText('');
+        setAverageConfidence(0);
+
         if (image) {
             loadTesseract();
+            const img = new Image();
+            img.onload = () => setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+            img.src = image.cropped;
         }
     }, [image, loadTesseract]);
 
     const handleExtractText = async () => {
-        if (!image || tesseractStatus !== 'loaded') {
-            showToast('OCR engine not ready. Please wait.', 'error');
+        if (!image || tesseractStatus !== 'loaded' || (usePreprocessing && cvStatus !== 'loaded')) {
+            showToast('OCR engine or preprocessor not ready.', 'error');
             return;
         }
         setIsOcrRunning(true);
+        setOcrData([]);
+        
         try {
+            let imageUrlToProcess = image.cropped;
+            if (usePreprocessing) {
+                setOcrMessage('Preprocessing image...');
+                imageUrlToProcess = await preprocessImageForOCR(image.cropped);
+            }
+
+            setOcrMessage('Recognizing text...');
             const { Tesseract } = window as any;
             const worker = await Tesseract.createWorker('eng');
-            const { data: { text } } = await worker.recognize(image.cropped);
-            setOcrText(text);
-            setProcessedText(text);
+            const { data } = await worker.recognize(imageUrlToProcess);
+            
+            const confidentWords = data.words.filter((w: TesseractWord) => w.confidence > 60);
+            const totalConfidence = confidentWords.reduce((acc: number, word: TesseractWord) => acc + word.confidence, 0);
+            setAverageConfidence(confidentWords.length > 0 ? Math.round(totalConfidence / confidentWords.length) : 0);
+            
+            setOcrData(confidentWords);
+            setEditableText(data.text);
+            setRawOcrText(data.text);
+            
+            showToast(`OCR complete.`, 'success');
             await worker.terminate();
         } catch (error) {
             console.error("OCR Error:", error);
             showToast('Failed to extract text from image.', 'error');
         } finally {
             setIsOcrRunning(false);
+            setOcrMessage('Start OCR');
         }
     };
     
-    const handleCopyText = () => {
-        if (textAreaRef.current) {
-            navigator.clipboard.writeText(processedText)
-                .then(() => showToast('Text copied to clipboard!', 'success'))
-                .catch(() => showToast('Failed to copy text.', 'error'));
-        }
+    // FIX: Re-formatted and typed the minified function
+    const getSelectionRect = () => {
+        if (!selectionBox) return null;
+        const x = Math.min(selectionBox.x1, selectionBox.x2);
+        const y = Math.min(selectionBox.y1, selectionBox.y2);
+        const width = Math.abs(selectionBox.x1 - selectionBox.x2);
+        const height = Math.abs(selectionBox.y1 - selectionBox.y2);
+        return { x, y, width, height };
+    };
+    
+    const checkIntersection = (
+        wordBbox: TesseractWord['bbox'],
+        selectionRect: { x: number, y: number, width: number, height: number },
+        scaleX: number,
+        scaleY: number
+    ) => {
+        const wordRect = {
+            x: wordBbox.x0 * scaleX, y: wordBbox.y0 * scaleY,
+            width: (wordBbox.x1 - wordBbox.x0) * scaleX, height: (wordBbox.y1 - wordBbox.y0) * scaleY,
+        };
+        return !(
+            wordRect.x > selectionRect.x + selectionRect.width ||
+            wordRect.x + wordRect.width < selectionRect.x ||
+            wordRect.y > selectionRect.y + selectionRect.height ||
+            wordRect.y + wordRect.height < selectionRect.y
+        );
     };
 
-    const handleRemoveSpaces = () => {
-        setProcessedText(ocrText.replace(/\s+/g, ' ').trim());
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (ocrData.length === 0) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        setIsSelecting(true);
+        setSelectionBox({ x1: x, y1: y, x2: x, y2: y });
+        setSelectedWords([]);
+    };
+    
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!isSelecting || !selectionBox) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        setSelectionBox({ ...selectionBox, x2: x, y2: y });
+        const selectionRect = getSelectionRect();
+        const container = imageContainerRef.current;
+        if (!selectionRect || !container) return;
+        const scaleX = container.clientWidth / imageDimensions.width;
+        const scaleY = container.clientHeight / imageDimensions.height;
+        setSelectedWords(ocrData.filter(word => checkIntersection(word.bbox, selectionRect, scaleX, scaleY)));
+    };
+    
+    const handleMouseUp = () => setIsSelecting(false);
+
+    const selectedText = useMemo(() => {
+        if (selectedWords.length === 0) return "";
+        return [...selectedWords]
+            .sort((a, b) => {
+                if (Math.abs(a.bbox.y0 - b.bbox.y0) > 10) return a.bbox.y0 - b.bbox.y0;
+                return a.bbox.x0 - b.bbox.x0;
+            })
+            .map(word => word.text)
+            .join(' ');
+    }, [selectedWords]);
+
+    const handleCopySelection = () => {
+        if (!selectedText) return;
+        navigator.clipboard.writeText(selectedText)
+            .then(() => showToast('Selected text copied!', 'success'))
+            .catch(() => showToast('Failed to copy text.', 'error'));
     };
 
-    const handleUpperCase = () => {
-        setProcessedText(ocrText.toUpperCase());
-    };
-
-    const handleLowerCase = () => {
-        setProcessedText(ocrText.toLowerCase());
-    };
-
-    const handleResetText = () => {
-        setProcessedText(ocrText);
+    const handleCopyEditableText = () => {
+        navigator.clipboard.writeText(editableText)
+          .then(() => showToast('Text copied to clipboard!', 'success'))
+          .catch(() => showToast('Failed to copy text.', 'error'));
     };
 
     if (!image) return null;
+    const selectionRect = getSelectionRect();
+    const container = imageContainerRef.current;
+    const scaleX = container ? container.clientWidth / imageDimensions.width : 1;
+    const scaleY = container ? container.clientHeight / imageDimensions.height : 1;
 
     return (
         <Modal isOpen={!!image} onClose={onClose} title="Image Details & OCR" className="max-w-4xl w-full">
             <div className="flex flex-col md:flex-row gap-6 max-h-[80vh]">
-                <div className="md:w-1/2 flex-shrink-0">
-                    <img src={image.cropped} alt="Detail view" className="w-full h-auto max-h-[75vh] object-contain rounded-lg bg-gray-100 dark:bg-gray-800" />
+                <div className="md:w-1/2 flex-shrink-0 relative">
+                     <div 
+                        ref={imageContainerRef}
+                        className="relative w-full h-auto max-h-[75vh] select-none bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden"
+                        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} >
+                        <img src={image.cropped} alt="Detail view" className="w-full h-full object-contain pointer-events-none" />
+                        {ocrData.length > 0 && (
+                            <div className="absolute top-0 left-0 w-full h-full cursor-text">
+                                {ocrData.map((word, i) => (
+                                    <div key={i} title={word.text} className={`absolute ${selectedWords.some(sw => sw === word) ? 'bg-blue-500/40' : 'hover:bg-blue-500/20'}`} style={{
+                                        left: `${word.bbox.x0 * scaleX}px`, top: `${word.bbox.y0 * scaleY}px`,
+                                        width: `${(word.bbox.x1 - word.bbox.x0) * scaleX}px`, height: `${(word.bbox.y1 - word.bbox.y0) * scaleY}px`
+                                    }} />
+                                ))}
+                                {selectionRect && <div className="absolute border-2 border-dashed border-blue-600 bg-blue-500/20" style={{
+                                    left: selectionRect.x, top: selectionRect.y, width: selectionRect.width, height: selectionRect.height
+                                }} />}
+                            </div>
+                        )}
+                    </div>
+                    <AnimatePresence>
+                        {selectedText && (
+                            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+                                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+                                <button onClick={handleCopySelection} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg shadow-lg text-sm hover:bg-gray-700">
+                                    <Copy size={14} /> Copy Selection
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
                 <div className="md:w-1/2 flex flex-col min-h-0">
                     <h4 className="font-semibold text-lg mb-2">Text Recognition (OCR)</h4>
-                    <button
-                        onClick={handleExtractText}
-                        disabled={isOcrRunning || tesseractStatus !== 'loaded'}
-                        className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-all text-sm disabled:bg-gray-400 disabled:cursor-not-allowed mb-4"
-                    >
-                        {isOcrRunning ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <FileText className="w-5 h-5 mr-2" />}
-                        {isOcrRunning ? 'Extracting...' : (tesseractStatus === 'loading' ? 'Loading Engine...' : 'Extract Text')}
-                    </button>
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                        <button
+                            onClick={handleExtractText}
+                            disabled={isOcrRunning || tesseractStatus !== 'loaded'}
+                            className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-all text-sm disabled:bg-gray-400 disabled:cursor-not-allowed" >
+                            {isOcrRunning ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <FileText className="w-5 h-5 mr-2" />}
+                            {isOcrRunning ? ocrMessage : 'Start OCR'}
+                        </button>
+                        <label className="flex items-center gap-2 text-sm text-[var(--theme-text-secondary)] whitespace-nowrap cursor-pointer">
+                            <input type="checkbox" checked={usePreprocessing} onChange={(e) => setUsePreprocessing(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                            Preprocess
+                        </label>
+                    </div>
                     
                     <AnimatePresence>
-                        {ocrText && (
-                            <motion.div 
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="flex-grow flex flex-col min-h-0"
-                            >
+                        {rawOcrText && (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex-grow flex flex-col min-h-0">
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="text-sm font-medium">Editable Text</label>
+                                    <span className="text-xs font-mono px-2 py-1 rounded bg-gray-200 dark:bg-gray-700" title="Average confidence of recognized words">Confidence: {averageConfidence}%</span>
+                                </div>
                                 <textarea
-                                    ref={textAreaRef}
-                                    value={processedText}
-                                    onChange={(e) => setProcessedText(e.target.value)}
-                                    readOnly={isOcrRunning}
+                                    value={editableText}
+                                    onChange={(e) => setEditableText(e.target.value)}
                                     className="w-full flex-grow p-2 border border-[var(--theme-border-secondary)] rounded-md bg-[var(--theme-bg-secondary)] min-h-[150px] text-sm"
-                                    placeholder="Extracted text will appear here."
-                                />
+                                    placeholder="Extracted text will appear here." />
                                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
-                                    <button onClick={handleCopyText} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Copy</button>
-                                    <button onClick={handleRemoveSpaces} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Trim Spaces</button>
-                                    <button onClick={handleUpperCase} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">UPPERCASE</button>
-                                    <button onClick={handleLowerCase} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">lowercase</button>
-                                    <button onClick={handleResetText} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 col-span-2 lg:col-span-1">Reset</button>
+                                    <button onClick={handleCopyEditableText} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Copy All</button>
+                                    <button onClick={() => setEditableText(editableText.replace(/\s+/g, ' ').trim())} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Trim Spaces</button>
+                                    <button onClick={() => setEditableText(editableText.toUpperCase())} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">UPPERCASE</button>
+                                    <button onClick={() => setEditableText(editableText.toLowerCase())} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">lowercase</button>
+                                    <button onClick={() => setEditableText(rawOcrText)} className="p-2 text-xs rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">Reset</button>
+                                    <button onClick={() => setEditableText('')} className="p-2 text-xs rounded-md bg-red-200 text-red-800 dark:bg-red-900/50 dark:text-red-300 hover:bg-red-300 dark:hover:bg-red-900">Clear</button>
                                 </div>
                             </motion.div>
                         )}
@@ -335,6 +510,7 @@ const ImageDetailModal: FC<{ image: CroppedImage | null; onClose: () => void; }>
     );
 };
 
+// ... (The rest of the file (ToolPages, App, etc.) remains the same as the previous correct version)
 const ToolPages: FC = () => {
     const { currentPage, showToast, croppedImages, setCroppedImages, cvStatus, pdfLibStatus, loadPdfLib } = useAppContext();
 
@@ -639,7 +815,7 @@ const ToolPages: FC = () => {
                         const track = stream.getVideoTracks()[0];
                         if (track) {
                            const capabilities = track.getCapabilities();
-                           setTorchSupported(!!(capabilities as any).torch);
+                            setTorchSupported(!!(capabilities as any).torch);
                         }
                     }, 500);
                 } catch (err) {
@@ -1101,10 +1277,10 @@ const ToolPages: FC = () => {
                     <button onClick={() => setAppState('idle')} className="font-semibold px-4 py-2 rounded-lg text-[var(--theme-accent-primary)] hover:bg-[var(--theme-bg-tertiary)] transition-colors text-sm sm:text-base">Cancel</button>
                     <div className="flex items-center gap-2">
                          <button onClick={handleCaptureToggle} className={`inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${isCaptureMode ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                             <MousePointerClick className="w-4 h-4 mr-2" /> {isCaptureMode ? 'Capturing...' : 'Capture Corners'}
+                              <MousePointerClick className="w-4 h-4 mr-2" /> {isCaptureMode ? 'Capturing...' : 'Capture Corners'}
                          </button>
                          <button onClick={handleApplyCrop} className="inline-flex items-center px-4 py-2 bg-[var(--theme-accent-primary)] text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity text-sm sm:text-base">
-                             <Crop className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> Apply
+                              <Crop className="w-4 h-4 sm:w-5 sm:h-5 mr-2" /> Apply
                          </button>
                     </div>
                 </header>
@@ -1120,14 +1296,14 @@ const ToolPages: FC = () => {
             <div className="absolute inset-0 bg-black z-[1001] flex flex-col">
                 <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover"></video>
                 <div className="absolute top-4 right-4 flex flex-col gap-4">
-                       {torchSupported && (
-                            <button
-                                onClick={toggleTorch}
-                                className={`p-3 rounded-full transition-colors ${torchOn ? 'bg-amber-400 text-gray-900' : 'bg-black/50 text-white'}`}
-                            >
-                                {torchOn ? <ZapOff size={24} /> : <Zap size={24} />}
-                            </button>
-                        )}
+                           {torchSupported && (
+                                <button
+                                    onClick={toggleTorch}
+                                    className={`p-3 rounded-full transition-colors ${torchOn ? 'bg-amber-400 text-gray-900' : 'bg-black/50 text-white'}`}
+                                >
+                                    {torchOn ? <ZapOff size={24} /> : <Zap size={24} />}
+                                </button>
+                           )}
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent flex justify-center items-center">
                     <button aria-label="Cancel" onClick={() => setIsCameraOpen(false)} className="absolute left-4 text-white font-semibold px-4 py-2 rounded-lg">Cancel</button>
@@ -1214,6 +1390,7 @@ const ToolPages: FC = () => {
                         <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} onImageClick={(img) => setSelectedImageForDetail(img)} />
                     </div>
                 </Card>
+                <ImageDetailModal image={selectedImageForDetail} onClose={() => setSelectedImageForDetail(null)} />
             </PageWrapper>
         )
     }
@@ -1240,22 +1417,23 @@ const ToolPages: FC = () => {
                     <CroppedImagesComponent onEdit={(img) => processAndSetImage(img.source, img)} onCopy={handleCopyImage} selectable={isGallerySelectMode} selectedIds={gallerySelection} onSelect={handleGallerySelection} onImageClick={(img) => !isGallerySelectMode && setSelectedImageForDetail(img)} />
                 </Card>
                  <Modal isOpen={isPdfRenameModalOpen} onClose={() => setIsPdfRenameModalOpen(false)} title="Name Your PDF">
-                    <div>
-                        <label className="text-sm font-medium text-[var(--theme-text-secondary)] mb-1.5 block">File Name</label>
-                        <input 
-                            type="text" 
-                            value={pdfFileName} 
-                            onChange={(e) => setPdfFileName(e.target.value)} 
-                            placeholder="Enter file name" 
-                            className="w-full px-3 py-2 text-sm rounded-md border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent-primary)]" 
-                        />
-                    </div>
-                    <div className="mt-6 flex justify-end">
-                        <button onClick={executePdfCreation} className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                            <FileText size={16} className="mr-2" /> Create PDF
-                        </button>
-                    </div>
-                </Modal>
+                     <div>
+                         <label className="text-sm font-medium text-[var(--theme-text-secondary)] mb-1.5 block">File Name</label>
+                         <input 
+                             type="text" 
+                             value={pdfFileName} 
+                             onChange={(e) => setPdfFileName(e.target.value)} 
+                             placeholder="Enter file name" 
+                             className="w-full px-3 py-2 text-sm rounded-md border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--theme-accent-primary)]" 
+                         />
+                     </div>
+                     <div className="mt-6 flex justify-end">
+                         <button onClick={executePdfCreation} className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                             <FileText size={16} className="mr-2" /> Create PDF
+                         </button>
+                     </div>
+                 </Modal>
+                <ImageDetailModal image={selectedImageForDetail} onClose={() => setSelectedImageForDetail(null)} />
             </PageWrapper>
         )
     }
@@ -1291,12 +1469,7 @@ const ToolPages: FC = () => {
         )
     }
 
-    return (
-        <>
-            <ImageDetailModal image={selectedImageForDetail} onClose={() => setSelectedImageForDetail(null)} />
-            <div />
-        </>
-    );
+    return null;
 }
 
 const App: FC = () => {
